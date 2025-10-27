@@ -1,0 +1,29 @@
+# cargo install cargo-packager --locked
+#
+# cargo build --release
+# cargo packager --release
+
+[package]
+name = "static_atoms_rs"
+version = "2025.4.0"
+authors = ['Robert Lang <https://mastodon.social/@biochemic>']
+edition = "2024"
+description = "a terminal program to transform a web template into a static website using nothing more than a few extra tags"
+
+[[bin]]
+name = "static_atoms"
+path = "src/bin.rs"
+
+[package.metadata.packager]
+before-packaging-command = "cargo build --release"
+copyright = "GPL 3.0 only"
+
+[profile.release]
+codegen-units = 1
+debug = false
+lto = "fat"
+incremental = false
+opt-level = 3
+overflow-checks = false
+strip = "symbols"
+panic = "abort"
