@@ -1,13 +1,16 @@
 mod dist;
-use std::{default, env, path::PathBuf};
+use std::{env, path::PathBuf};
 
 use crate::dist::run_dist;
+
+static DEFAULT_MAX_DEPTH: u8 = 8;
 
 pub struct Configuration {
     root: PathBuf,
     out: Option<PathBuf>,
     clean: bool,
     write: bool,
+    max_depth: u8,
 }
 
 impl std::fmt::Display for Configuration {
@@ -26,6 +29,7 @@ impl std::fmt::Display for Configuration {
                 ),
                 format!("  clean: `{}`", self.clean),
                 format!("  write: `{}`", self.write),
+                format!("  max_depth: `{}`", self.max_depth),
             ]
             .join("\n")
         )
@@ -48,6 +52,7 @@ fn main() {
         out: None,
         clean: false,
         write: true,
+        max_depth: DEFAULT_MAX_DEPTH,
     };
     let mut action = Action::RunHelp;
 
@@ -78,6 +83,14 @@ fn main() {
             if let Some(root_param) = param.strip_prefix("root=") {
                 let path: PathBuf = PathBuf::from(root_param);
                 config.root = path;
+                continue;
+            }
+
+            if let Some(depth_param) = param.strip_prefix("depth=") {
+                let depth: u8 = depth_param
+                    .parse()
+                    .expect("The depth parameter does not contain a valid number");
+                config.max_depth = depth;
                 continue;
             }
         }
@@ -164,6 +177,7 @@ fn show_help() {
         \t\t\tthe new static website\n\
         \t--dry\t\tdo not write any files, to validate if the process runs\n\
         \t\t\tsuccessfully without errors\n\
+        \t--depth\t\tsets the maximum recursion depth. Default is {DEFAULT_MAX_DEPTH}\n\
         \t-c\t\tsame as --clean\n\
         \t-d\t\tsame as --dry\n\
     "

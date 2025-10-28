@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, fs, io, path::{Path, PathBuf}};
+use std::{collections::HashMap, ffi::OsStr, fmt::Debug, fs, io, path::{Path, PathBuf}, time::SystemTime};
 
 use crate::Configuration;
 
@@ -50,7 +50,14 @@ pub fn run_dist(config: &Configuration) {
         println!("Something went wrong, when copying the media over to {}", dist_path.join("media").to_string_lossy());
     }
 
-    process_page(config, config.root.clone().join("index.html"));
+    // Create default context
+    let default_context = HashMap::from([
+        ("_VERSION".to_string(), env!("CARGO_PKG_VERSION").to_string()),
+        ("_APPNAME".to_string(), env!("CARGO_PKG_NAME").to_string()),
+        ("_APPLINK".to_string(), format!("<a href=\"{}\">{}</a>", env!("CARGO_PKG_HOMEPAGE"), env!("CARGO_PKG_NAME")).to_string())
+    ]);
+
+    process_page(config, config.root.clone().join("index.html"), &default_context);
 
     // Go through the pages directory
     for page in fs::read_dir(pages_path).expect("Wasn't able to go through the pages directory. Does it exist and are you allowed to open it?") {
@@ -59,7 +66,7 @@ pub fn run_dist(config: &Configuration) {
                 if 
                     found_page.path().is_file() && 
                     found_page.path().extension().and_then(OsStr::to_str) == Some("html") {
-                    process_page(config, found_page.path());
+                    process_page(config, found_page.path(), &default_context);
                 };
             },
             Err(_) => println!("Couldn't open pages path, ignoring it"),
@@ -67,24 +74,41 @@ pub fn run_dist(config: &Configuration) {
     }
 }
 
-pub fn read_section(config: &Configuration, path: &PathBuf) -> String {
-    let mut contents = fs::read_to_string(path).expect("Wasn't able to read the file contents");
+pub fn read_section(path: &PathBuf) -> String {
+    let file_error = format!("Wasn't able to read the file contents of `{}`", path.to_string_lossy());
+    fs::read_to_string(path).expect(&file_error)
+}
+
+pub fn read_section_or_default(path: &PathBuf) -> String {
+    match fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(_) => {
+            println!("Wasn't able to read the file contents of `{}`. returning empty component", path.to_string_lossy());
+            String::default()
+        },
+    }
+}
+
+pub fn resolve_tokens(config: &Configuration, mut contents: String, depth: u8, context: &HashMap<String, String>) -> String {
     while let Some(index) = contents.find("<##") {
         if let Some(index_end) = contents[index..].find(">") {
-            contents.replace_range(
-                index..(index + index_end + 1), 
-                &parse_token(config, &contents[index..(index + index_end + 1)])
-            );
+            let new_content = if depth < config.max_depth {
+                    parse_token(config, &contents[index..(index + index_end + 1)], depth + 1, context)
+                } else {
+                    println!("Surpassed max recursion depth of {}. Replacing deeper embeds with space", config.max_depth);
+                    String::default()
+                };
+            contents.replace_range(index..(index + index_end + 1), &new_content);
         }
     };
 
     contents
 }
 
-pub fn process_page(config: &Configuration, page: PathBuf) {
+pub fn process_page(config: &Configuration, page: PathBuf, default_context: &HashMap<String, String>) {
     println!("Transforming {} ...", page.to_str().unwrap_or_default());
     
-    let contents = read_section(config, &page);
+    let contents = resolve_tokens(config, read_section(&page), 0, default_context);
 
     if config.write {
         let relative_path = page.strip_prefix(config.root.clone()).expect("Wasnt able to get relative Path");
@@ -109,77 +133,155 @@ pub fn process_page(config: &Configuration, page: PathBuf) {
     }
 }
 
-pub fn parse_token(config: &Configuration, token: &str) -> String {
+pub fn parse_token(config: &Configuration, token: &str, current_depth: u8, context: &HashMap<String, String>) -> String {
     let embed_identifier = token[3..token.len()-1].trim();
 
-    if let Some(open_index) = embed_identifier.find("[") {
-        // Is potentially a folder identifier
-        if let Some(close_index) = embed_identifier.find("]") {
+    // Check if it might be a folder embed
+    match (embed_identifier.find("["), embed_identifier.find("]")) {
+        (Some(open_index), Some(close_index)) => {
+            return parse_folder_embed(config, embed_identifier, current_depth, (open_index, close_index), context)
+        },
+        (Some(_), None) | (None, Some(_)) => {
+            println!("folder identifier `{embed_identifier}` is incomplete");
+        },
+        _ => ()
+    };
 
-            // Determine the item amount
-            let mut elem_count = if close_index - open_index == 1 {
-                usize::MAX
-            } else if let Some(num_string) = &embed_identifier[(open_index + 1)..close_index].to_string().strip_prefix("..") {
-                if let Ok(num) = num_string.parse::<usize>() {
-                    num
-                } else {
-                    println!("the identifier `{embed_identifier}` does not contain a valid number");
-                    usize::MAX
-                }
-            } else {
-                println!("the identifier `{embed_identifier}` is not in the correct format. Use `identifier[..num]`");
-                usize::MAX
+    // Check if it is a parametric embed
+    match (embed_identifier.find("("), embed_identifier.find(")")) {
+        (Some(open_index), Some(close_index)) => {
+            return parse_parametric_embed(config, embed_identifier, current_depth, (open_index, close_index), context)
+        },
+        (Some(_), None) | (None, Some(_)) => {
+            println!("parametric identifier `{embed_identifier}` is incomplete");
+        },
+        _ => ()
+    }
+
+    // Check if it is a variable
+    match (embed_identifier.find("{"), embed_identifier.find("}")) {
+        (Some(0), Some(close_index)) => {
+            return parse_variable(&embed_identifier[1..close_index], context)
+        },
+        (Some(_), Some(_)) | (Some(_), None) | (None, Some(_)) => {
+            println!("variable identifier `{embed_identifier}` is incomplete or malformed");
+        },
+        _ => ()
+    }
+
+    // If none of them worked, it's most likely a simple embed
+    parse_single_embed(config, embed_identifier, current_depth, context)
+}
+
+pub fn parse_parametric_embed(
+    config: &Configuration, 
+    component: &str, 
+    current_depth: u8, 
+    brackets: (usize, usize), 
+    context: &HashMap<String, String>
+) -> String {
+    if brackets.1 - brackets.0 == 1 {
+        parse_single_embed(config, component[..brackets.0].trim(), current_depth, context)
+    } else {
+        //Parse the contents between the brackets first
+        let mut local_context = context.clone();
+        let mut variables_string = component[(brackets.0 + 1)..brackets.1].trim();
+
+        while let Some(next_equals) = variables_string.find('=') {
+
+            let variable_name = variables_string[..next_equals].trim();
+
+            let next_string_open = match variables_string.find('"') {
+                Some(string_start_index) => string_start_index,
+                None => break,
             };
-           
 
-            let folder_embed = config.root.join("sections").join(&embed_identifier[..open_index]);
-            let dirs = fs::read_dir(get_dist_path(config).join(&folder_embed));
-            match dirs {
-                Ok(dirs) => {
-                    let mut collected_dirs: Vec<_> = dirs.filter_map(|dir| {match dir {
-                        Ok(found_dir) => {
-                            if found_dir.path().is_file() && 
-                            found_dir.path().extension().and_then(OsStr::to_str) == Some("html") {
-                                Some(found_dir)
-                            } else {
-                                None
-                            } 
-                        },
-                        Err(_) => None,
-                    }}).collect();
-                    collected_dirs.sort_by_key(|a| a.file_name());
+            let next_string_close = match variables_string[(next_string_open + 1)..].find('"') {
+                Some(string_end_index) => (next_string_open + 1) + string_end_index,
+                None => break,
+            };
 
-                    elem_count = elem_count.min(collected_dirs.len());
+            let value = &variables_string[(next_string_open + 1)..next_string_close];
 
-                    let mut content = String::default();
-                    for section in &collected_dirs[0..elem_count] {
-                        content.push_str(&read_section(config, &section.path()));
-                    }
-                    return content;
-                },
-                Err(_) => println!("folder identifier `{}` is unknown, replacing with empty", folder_embed.to_string_lossy()),
-            }
-            
-        } else {
-            println!("folder identifier `{embed_identifier}` is incomplete, replacing with empty");
+            local_context.insert(variable_name.to_string(), value.to_string());
+
+            variables_string = &variables_string[(next_string_close + 1)..];
         }
 
-        String::default()
+        if !variables_string.is_empty() {
+            println!("component `{component}` couldn't be parsed completely or at all. Is it malformed?");
+        }
 
-    } else {
-        parse_single_component(config, embed_identifier)
+        parse_single_embed(config, component[..brackets.0].trim(), current_depth, &local_context)
     }
 }
 
-pub fn parse_single_component(config: &Configuration, component: &str) -> String {
+pub fn parse_variable(
+    component: &str, 
+    context: &HashMap<String, String>
+) -> String {
+    match context.get(component).cloned() {
+        Some(variable) => variable,
+        None => {
+            println!("The variable `{component}` is undefined, replacing with empty space.");
+            Default::default()
+        },
+    }
+}
+
+pub fn parse_folder_embed(config: &Configuration, component: &str, current_depth: u8, brackets: (usize, usize), context: &HashMap<String, String>) -> String {
+    // Determine the item amount
+    let mut elem_count = if brackets.1 - brackets.0 == 1 {
+        usize::MAX
+    } else if let Some(num_string) = &component[(brackets.0 + 1)..brackets.1].to_string().strip_prefix("..") {
+        if let Ok(num) = num_string.parse::<usize>() {
+            num
+        } else {
+            println!("The identifier `{component}` does not contain a valid number");
+            usize::MAX
+        }
+    } else {
+        println!("The identifier `{component}` is not in the correct format. Use `identifier[..num]`");
+        usize::MAX
+    };
+
+    // Collect the files that are being chained
+    let folder_embed_path = config.root.join("sections").join(&component[..brackets.0]);
+    match fs::read_dir(&folder_embed_path) {
+        Ok(dirs) => {
+            let mut collected_dirs: Vec<_> = dirs.filter_map(|dir| {
+                match dir {
+                    Ok(found_dir) => {
+                        if found_dir.path().is_file() && 
+                        found_dir.path().extension().and_then(OsStr::to_str) == Some("html") {
+                            Some(found_dir)
+                        } else {
+                            None
+                        } 
+                    },
+                    Err(_) => None,
+                }
+            }).collect();
+            collected_dirs.sort_by_key(|a| a.file_name());
+
+            elem_count = elem_count.min(collected_dirs.len());
+
+            let mut content = String::default();
+            for section in &collected_dirs[0..elem_count] {
+                content.push_str(&resolve_tokens(config, read_section(&section.path()), current_depth, context));
+            }
+            content
+        },
+        Err(_) => {
+            println!("folder identifier `{}` is unknown, replacing with empty", folder_embed_path.to_string_lossy());
+            Default::default()
+        },
+    }
+}
+
+pub fn parse_single_embed(config: &Configuration, component: &str, current_depth: u8, context: &HashMap<String, String>) -> String {
     let mut embed_file_path = component.to_owned();
         embed_file_path.push_str(".html");
         let component_path = config.root.clone().join("sections").join(embed_file_path);
-        match fs::read_to_string(component_path) {
-            Ok(contents) => contents,
-            Err(_) => {
-                println!("Wasn't able to read the file contents of {component}. returning empty component");
-                String::default()
-            },
-        }
+        resolve_tokens(config, read_section_or_default(&component_path), current_depth, context)
 }
