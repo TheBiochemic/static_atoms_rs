@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ffi::OsStr, fmt::Debug, fs, io, path::{Path, PathBuf}, time::SystemTime};
+use std::{collections::HashMap, ffi::{OsStr, OsString}, fmt::Debug, fs, io, path::{Path, PathBuf}, time::SystemTime};
 
 use crate::Configuration;
 
@@ -51,13 +51,50 @@ pub fn run_dist(config: &Configuration) {
     }
 
     // Create default context
+    println!("Building global Context");
+    let pages = {
+        let mut pages_string = String::default();
+        pages_string.push_str("<ul class=\"siteindex\">");
+            if fs::exists(config.root.clone().join("index.html")).unwrap_or(false) {
+                pages_string.push_str("<li><a href=\"/index.html\">index.html</a></li>");
+            }
+
+            let mut dirs: Vec<fs::DirEntry> = 
+                fs::read_dir(config.root.clone().join("pages"))
+                    .map(|elem| 
+                        elem.into_iter()
+                            .filter_map(|elem| elem.ok())
+                            .collect::<Vec<_>>()
+                    ).unwrap_or_default();
+
+            dirs.sort_by_key(|elem| elem.file_name());
+
+            if !dirs.is_empty() {
+                pages_string.push_str("<li>");
+                if fs::exists(config.root.clone().join("index.html")).unwrap_or(false) {
+                    pages_string.push_str("<a href=\"/pages/index.html\">pages/index.html</a>");
+                }
+                pages_string.push_str("<ul class=\"siteindex\">");
+
+                for dir in dirs.iter().filter(|elem| (elem.file_name() != "index.html")) {
+                    if dir.path().is_file() && dir.path().extension().and_then(OsStr::to_str) == Some("html") {
+                        let filename_string = dir.file_name().into_string().unwrap_or_default();
+                        pages_string.push_str(&format!("<li><a href=\"/pages/{filename_string}\">{filename_string}</a></li>"));
+                    }
+                }
+
+                pages_string.push_str("</ul></li>");
+            }
+
+        pages_string.push_str("</ul>");
+        pages_string
+    };
     let default_context = HashMap::from([
         ("_VERSION".to_string(), env!("CARGO_PKG_VERSION").to_string()),
         ("_APPNAME".to_string(), env!("CARGO_PKG_NAME").to_string()),
-        ("_APPLINK".to_string(), format!("<a href=\"{}\">{}</a>", env!("CARGO_PKG_HOMEPAGE"), env!("CARGO_PKG_NAME")).to_string())
+        ("_APPLINK".to_string(), format!("<a href=\"{}\">{}</a>", env!("CARGO_PKG_HOMEPAGE"), env!("CARGO_PKG_NAME")).to_string()),
+        ("_PAGES".to_string(), pages)
     ]);
-
-    process_page(config, config.root.clone().join("index.html"), &default_context);
 
     // Go through the pages directory
     for page in fs::read_dir(pages_path).expect("Wasn't able to go through the pages directory. Does it exist and are you allowed to open it?") {
@@ -72,6 +109,8 @@ pub fn run_dist(config: &Configuration) {
             Err(_) => println!("Couldn't open pages path, ignoring it"),
         }
     }
+
+    process_page(config, config.root.clone().join("index.html"), &default_context);
 }
 
 pub fn read_section(path: &PathBuf) -> String {

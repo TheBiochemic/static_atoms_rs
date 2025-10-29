@@ -44,7 +44,7 @@ static_atoms dist
 Now your static website is in the folder `<project_root>/dist`
 
 ## Available Tags
-There are more tags available for you tu use. Im going to list them here:
+There are more tags available for you to use. Im going to list them here:
 | Tag | Description |
 |:--:|:---|
 | `<## embed_name>` | is a simple embed, that includes the HTML from `<project_root>/sections/embed_name.html` into wherever you try to embed it. |
@@ -62,6 +62,7 @@ There are a few variables, that are predefined, whenever a page is being parsed.
 | `<## {_VERSION}>` | Gets replaced by the version of this Tool, such as `2025.4.1` |
 | `<## {_APPNAME}>` | Gets replaced by the name of this Tool, such as `static_atoms_rs` |
 | `<## {_APPLINK}>` | Gets replaced by a href link to the github of this tool, such as `<a href="..">static_atoms_rs</a>`
+| `<## {_PAGES}>`| Gets replaced by an unordered list of href links to all available pages |
 
 ## Available CLI Arguments
 For a complete list run `static_atoms help`
