@@ -18,7 +18,8 @@ There are a few things to do to properly structure the project:
 * all your sections reside in `<project_root>/sections`
 * your index file is found at `<project_root>/index.html`
 * all your media sits in `<project_root>/media`
-* your stylesheet sits in `<project_root>/style.css`
+* additional files living at project_root are in `<project_root>/root`
+* ~~your stylesheet sits in `<project_root>/style.css`~~ your global stylesheet now lives in the root directory
 
 If you now want to embed the atom *my_embed.html* into your page, you do the following:
 ```html
@@ -53,6 +54,7 @@ There are more tags available for you to use. Im going to list them here:
 | `<## embed_name()>` | identical to a simple embed |
 | `<## embed_name(variable="value")>` | a parametric embed, that does the same as a simple embed, except that variables with the name `variable` defined within the embedded object are being replaced by `value`. At this time time it does not support embeds as part of the value |
 | `<## embed_name(var1="v1" var2="v2")>` | also a parametric embed, except with two variables, that are being replaced |
+| `<## embed_name(var1="v1()" var2="<## other_embed>")>` | _New:_ you can now use brackets and other embeds within the value of the parameters. They get correctly resolved aswell. |
 | `<## {variable}>` | a variable embed, that is being replaced with the value of `variable` passed into the current context by a parametric embed. If no variable has been found, it will be replaced by empty space |
 
 ## Predefined variables

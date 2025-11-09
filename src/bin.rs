@@ -1,4 +1,7 @@
 mod dist;
+#[cfg(test)]
+mod tests;
+
 use std::{env, path::PathBuf};
 
 use crate::dist::run_dist;

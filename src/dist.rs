@@ -26,7 +26,7 @@ fn copy_dir(from: impl AsRef<Path>, to: impl AsRef<Path>) -> io::Result<()> {
 pub fn run_dist(config: &Configuration) {
     let pages_path = config.root.clone().join("pages");
     let media_path = config.root.clone().join("media");
-    let stylesheet_path = config.root.clone().join("style.css");
+    let root_path = config.root.clone().join("root");
     let dist_path = get_dist_path(config);
 
     if config.clean {
@@ -38,11 +38,11 @@ pub fn run_dist(config: &Configuration) {
     fs::create_dir_all(&dist_path)
             .expect("Wasn't able to recreate the pages directory. Do you have the permissions?");
 
-    // Copy the stylesheet over
-    println!("Copy Stylesheet...");
-    if fs::copy(stylesheet_path, dist_path.join("style.css")).is_err() {
-        println!("Wasnt able to copy {}", dist_path.join("style.css").to_string_lossy())
-    };
+    // Copy the root files over
+    println!("Copy project root files...");
+    if copy_dir(root_path, &dist_path).is_err() {
+        println!("Something went wrong, when copying root files over to {}", dist_path.to_string_lossy());
+    }
 
     // Copy all the media over
     println!("Copy all Media...");
@@ -52,6 +52,26 @@ pub fn run_dist(config: &Configuration) {
 
     // Create default context
     println!("Building global Context");
+    let default_context = build_default_context(config);
+
+    // Go through the pages directory
+    for page in fs::read_dir(pages_path).expect("Wasn't able to go through the pages directory. Does it exist and are you allowed to open it?") {
+        match page {
+            Ok(found_page) => {
+                if 
+                    found_page.path().is_file() && 
+                    found_page.path().extension().and_then(OsStr::to_str) == Some("html") {
+                    process_page(config, found_page.path(), &default_context);
+                };
+            },
+            Err(_) => println!("Couldn't open pages path, ignoring it"),
+        }
+    }
+
+    process_page(config, config.root.clone().join("index.html"), &default_context);
+}
+
+pub fn build_default_context(config: &Configuration) -> HashMap<String, String> {
     let pages = {
         let mut pages_string = String::default();
         pages_string.push_str("<ul class=\"siteindex\">");
@@ -89,28 +109,12 @@ pub fn run_dist(config: &Configuration) {
         pages_string.push_str("</ul>");
         pages_string
     };
-    let default_context = HashMap::from([
+    HashMap::from([
         ("_VERSION".to_string(), env!("CARGO_PKG_VERSION").to_string()),
         ("_APPNAME".to_string(), env!("CARGO_PKG_NAME").to_string()),
         ("_APPLINK".to_string(), format!("<a href=\"{}\">{}</a>", env!("CARGO_PKG_HOMEPAGE"), env!("CARGO_PKG_NAME")).to_string()),
         ("_PAGES".to_string(), pages)
-    ]);
-
-    // Go through the pages directory
-    for page in fs::read_dir(pages_path).expect("Wasn't able to go through the pages directory. Does it exist and are you allowed to open it?") {
-        match page {
-            Ok(found_page) => {
-                if 
-                    found_page.path().is_file() && 
-                    found_page.path().extension().and_then(OsStr::to_str) == Some("html") {
-                    process_page(config, found_page.path(), &default_context);
-                };
-            },
-            Err(_) => println!("Couldn't open pages path, ignoring it"),
-        }
-    }
-
-    process_page(config, config.root.clone().join("index.html"), &default_context);
+    ])
 }
 
 pub fn read_section(path: &PathBuf) -> String {
@@ -130,7 +134,7 @@ pub fn read_section_or_default(path: &PathBuf) -> String {
 
 pub fn resolve_tokens(config: &Configuration, mut contents: String, depth: u8, context: &HashMap<String, String>) -> String {
     while let Some(index) = contents.find("<##") {
-        if let Some(index_end) = contents[index..].find(">") {
+        if let Some(index_end) = find_same_level(None, &contents[index..], '>', false) {
             let new_content = if depth < config.max_depth {
                     parse_token(config, &contents[index..(index + index_end + 1)], depth + 1, context)
                 } else {
@@ -172,6 +176,50 @@ pub fn process_page(config: &Configuration, page: PathBuf, default_context: &Has
     }
 }
 
+pub fn find_same_level(start_with: Option<char>, input: &str, test_char: char, test_first: bool) -> Option<usize> {
+    let mut layers: Vec<char> = Vec::new();
+
+    if let Some(start_with) = start_with {
+        layers.push(start_with);
+    }
+
+    let level_test = |character, layers: &mut Vec<char>| {
+        match character{
+                a @ '(' | a @ '<' => layers.push(a),
+                a @ '"' => if layers.last().is_some() && layers.last().unwrap().eq(&a) {
+                    layers.pop();
+                } else {
+                    layers.push(a);
+                },
+                ')' => if layers.last().is_some() && layers.last().unwrap().eq(&'(') {
+                    layers.pop();
+                },
+                '>' => if layers.last().is_some() && layers.last().unwrap().eq(&'<') {
+                    layers.pop();
+                },
+                _ => ()
+            }
+    };
+
+    if test_first {
+        for (index, character) in input.chars().enumerate() {
+            if character.eq(&test_char) && layers.is_empty() {
+                return Some(index)
+            };
+            level_test(character, &mut layers);
+        }
+    } else {
+        for (index, character) in input.chars().enumerate() {
+            level_test(character, &mut layers);
+            if character.eq(&test_char) && layers.is_empty() {
+                return Some(index)
+            };
+        }
+    }
+
+    None
+}
+
 pub fn parse_token(config: &Configuration, token: &str, current_depth: u8, context: &HashMap<String, String>) -> String {
     let embed_identifier = token[3..token.len()-1].trim();
 
@@ -187,7 +235,7 @@ pub fn parse_token(config: &Configuration, token: &str, current_depth: u8, conte
     };
 
     // Check if it is a parametric embed
-    match (embed_identifier.find("("), embed_identifier.find(")")) {
+    match (embed_identifier.find("("), find_same_level(None, embed_identifier, ')', false)) {
         (Some(open_index), Some(close_index)) => {
             return parse_parametric_embed(config, embed_identifier, current_depth, (open_index, close_index), context)
         },
