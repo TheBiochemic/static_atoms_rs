@@ -1,37 +1,10 @@
-use std::{collections::HashMap, env, fs};
+use std::{collections::HashMap, env};
 
 use crate::{
-    Configuration,
     dist::{build_default_context, resolve_tokens},
+    filetype::FileType,
+    tests::{create_test_page, get_config},
 };
-
-fn get_config() -> Configuration {
-    Configuration {
-        root: env::temp_dir().join("static_atoms_rs_tests"),
-        out: None,
-        clean: false,
-        write: false,
-        max_depth: 255u8,
-    }
-}
-
-fn create_test_page(
-    config: &Configuration,
-    subfolder: Option<&str>,
-    page_name: &str,
-    content: &str,
-) {
-    let mut path = config.root.join("sections");
-    if let Some(subfolder) = subfolder {
-        path = path.join(subfolder)
-    }
-
-    _ = fs::create_dir_all(path.clone());
-
-    path = path.join(format!("{page_name}.html"));
-
-    _ = fs::write(path, content);
-}
 
 #[test]
 fn parse_simple() {
@@ -45,7 +18,7 @@ fn parse_simple() {
 #[test]
 fn parse_embed() {
     let config = get_config();
-    create_test_page(&config, None, "my_embed", "<p>TEST</p>");
+    create_test_page(FileType::FileHTML, &config, None, "my_embed", "<p>TEST</p>");
     let in_text = "<html><body><## my_embed></body></html>".to_owned();
     let out_text = "<html><body><p>TEST</p></body></html>".to_owned();
     let contents = resolve_tokens(&config, in_text.clone(), 0, &HashMap::new());
@@ -56,7 +29,7 @@ fn parse_embed() {
 #[test]
 fn parse_embed_brackets() {
     let config = get_config();
-    create_test_page(&config, None, "my_embed", "<p>TEST</p>");
+    create_test_page(FileType::FileHTML, &config, None, "my_embed", "<p>TEST</p>");
     let in_text = "<html><body><## my_embed()></body></html>".to_owned();
     let out_text = "<html><body><p>TEST</p></body></html>".to_owned();
     let contents = resolve_tokens(&config, in_text.clone(), 0, &HashMap::new());
@@ -82,10 +55,34 @@ fn parse_folder_embed() {
     let config = get_config();
     let in_text = "<html><body><## embed_list[]></body></html>".to_owned();
     let out_text = "<html><body><p>1</p><p>2</p><p>3</p><p>4</p></body></html>".to_owned();
-    create_test_page(&config, Some("embed_list"), "1", "<p>1</p>");
-    create_test_page(&config, Some("embed_list"), "2", "<p>2</p>");
-    create_test_page(&config, Some("embed_list"), "3", "<p>3</p>");
-    create_test_page(&config, Some("embed_list"), "4", "<p>4</p>");
+    create_test_page(
+        FileType::FileHTML,
+        &config,
+        Some("embed_list"),
+        "1",
+        "<p>1</p>",
+    );
+    create_test_page(
+        FileType::FileHTML,
+        &config,
+        Some("embed_list"),
+        "2",
+        "<p>2</p>",
+    );
+    create_test_page(
+        FileType::FileHTML,
+        &config,
+        Some("embed_list"),
+        "3",
+        "<p>3</p>",
+    );
+    create_test_page(
+        FileType::FileHTML,
+        &config,
+        Some("embed_list"),
+        "4",
+        "<p>4</p>",
+    );
 
     let contents = resolve_tokens(&config, in_text.clone(), 0, &HashMap::new());
 
@@ -97,10 +94,34 @@ fn parse_folder_limit_embed() {
     let config = get_config();
     let in_text = "<html><body><## embed_list[..2]></body></html>".to_owned();
     let out_text = "<html><body><p>1</p><p>2</p></body></html>".to_owned();
-    create_test_page(&config, Some("embed_list"), "1", "<p>1</p>");
-    create_test_page(&config, Some("embed_list"), "2", "<p>2</p>");
-    create_test_page(&config, Some("embed_list"), "3", "<p>3</p>");
-    create_test_page(&config, Some("embed_list"), "4", "<p>4</p>");
+    create_test_page(
+        FileType::FileHTML,
+        &config,
+        Some("embed_list"),
+        "1",
+        "<p>1</p>",
+    );
+    create_test_page(
+        FileType::FileHTML,
+        &config,
+        Some("embed_list"),
+        "2",
+        "<p>2</p>",
+    );
+    create_test_page(
+        FileType::FileHTML,
+        &config,
+        Some("embed_list"),
+        "3",
+        "<p>3</p>",
+    );
+    create_test_page(
+        FileType::FileHTML,
+        &config,
+        Some("embed_list"),
+        "4",
+        "<p>4</p>",
+    );
 
     let contents = resolve_tokens(&config, in_text.clone(), 0, &HashMap::new());
 
@@ -137,7 +158,13 @@ fn parse_parametric() {
     let config = get_config();
     let in_text = "<html><body><## embed_name(var1=\"v1\" var2=\"v2\")></body></html>".to_owned();
     let out_text = "<html><body><p>v1v2</p></body></html>".to_owned();
-    create_test_page(&config, None, "embed_name", "<p><## {var1}><## {var2}></p>");
+    create_test_page(
+        FileType::FileHTML,
+        &config,
+        None,
+        "embed_name",
+        "<p><## {var1}><## {var2}></p>",
+    );
 
     let contents = resolve_tokens(&config, in_text.clone(), 0, &HashMap::new());
 
@@ -151,6 +178,7 @@ fn parse_parametric_edge_cases() {
         "<html><body><## embed_name2(var1=\"v1()\" var2=\"<## {var3}>\" var3=\"v2\")></body></html>".to_owned();
     let out_text = "<html><body><p>v1()v2</p></body></html>".to_owned();
     create_test_page(
+        FileType::FileHTML,
         &config,
         None,
         "embed_name2",

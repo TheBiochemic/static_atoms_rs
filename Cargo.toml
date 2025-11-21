@@ -5,7 +5,7 @@
 
 [package]
 name = "static_atoms_rs"
-version = "2025.4.3"
+version = "2025.4.4"
 authors = ['Robert Lang <https://mastodon.social/@biochemic>']
 edition = "2024"
 description = "a terminal program to transform a web template into a static website using nothing more than a few extra tags"
