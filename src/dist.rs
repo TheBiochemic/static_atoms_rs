@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     ffi::OsStr,
     fs, io,
-    path::{Path, PathBuf},
+    path::{Path, PathBuf}, usize,
 };
 
 use crate::Configuration;
@@ -14,15 +14,21 @@ fn get_dist_path(config: &Configuration) -> PathBuf {
     }
 }
 
-fn copy_dir(from: impl AsRef<Path>, to: impl AsRef<Path>) -> io::Result<()> {
+fn copy_dir(config: &Configuration, from: impl AsRef<Path>, to: impl AsRef<Path>) -> io::Result<()> {
     fs::create_dir_all(&to)?;
     for entry in fs::read_dir(from)? {
         let entry = entry?;
         let ty = entry.file_type()?;
         if ty.is_dir() {
-            copy_dir(entry.path(), to.as_ref().join(entry.file_name()))?;
+            copy_dir(config, entry.path(), to.as_ref().join(entry.file_name()))?;
         } else {
-            fs::copy(entry.path(), to.as_ref().join(entry.file_name()))?;
+            let to_filename = to.as_ref().join(entry.file_name());
+            if config.verbose {
+                println!("[verbose] copy file {} to {}", 
+                    entry.file_name().to_string_lossy(), 
+                    to_filename.to_string_lossy())
+            }
+            fs::copy(entry.path(), to_filename)?;
         }
     }
     Ok(())
@@ -45,7 +51,7 @@ pub fn run_dist(config: &Configuration) {
 
     // Copy the root files over
     println!("Copy project root files...");
-    if copy_dir(root_path, &dist_path).is_err() {
+    if copy_dir(config, root_path, &dist_path).is_err() {
         println!(
             "Something went wrong, when copying root files over to {}",
             dist_path.to_string_lossy()
@@ -54,7 +60,7 @@ pub fn run_dist(config: &Configuration) {
 
     // Copy all the media over
     println!("Copy all Media...");
-    if copy_dir(media_path, dist_path.join("media")).is_err() {
+    if copy_dir(config, media_path, dist_path.join("media")).is_err() {
         println!(
             "Something went wrong, when copying the media over to {}",
             dist_path.join("media").to_string_lossy()
@@ -117,12 +123,21 @@ pub fn build_default_context(config: &Configuration) -> HashMap<String, String> 
 
             for dir in dirs
                 .iter()
-                .filter(|elem| (elem.file_name() != "index.html"))
+                .filter(|elem| elem.file_name() != "index.html")
             {
                 if dir.path().is_file()
                     && dir.path().extension().and_then(OsStr::to_str) == Some("html")
                 {
-                    let filename_string = dir.file_name().into_string().unwrap_or_default();
+                    let filename_string = if !config.hide_extension {
+                        dir.file_name().into_string().unwrap_or_default()
+                    } else {
+                        let mut cloned_dir = dir.path().clone();
+                        let file_stem = cloned_dir.file_stem().unwrap().to_os_string();
+                        cloned_dir.pop();
+                        cloned_dir.push(file_stem);
+                        cloned_dir.file_name().unwrap().to_string_lossy().into()
+
+                    };
                     pages_string.push_str(&format!(
                         "<li><a href=\"/pages/{filename_string}\">{filename_string}</a></li>"
                     ));
@@ -176,15 +191,29 @@ pub fn read_section_or_default(path: &PathBuf) -> String {
 }
 
 pub fn resolve_tokens(
+    path: String,
     config: &Configuration,
     mut contents: String,
     depth: u8,
     context: &HashMap<String, String>,
 ) -> String {
+    let mut content_len = usize::MAX;
+    let mut content_len_new = usize::MAX - 1;
+    let mut last_token_index = 0;
     while let Some(index) = contents.find("<##") {
+        
+        if content_len == content_len_new && last_token_index == index {
+            println!("Cannot resolve this token properly, aborting. (Are the symbols <>'\"()[] used properly?)");
+            break;
+        }
+
+        if config.verbose {
+            println!("[verbose] {path}: found next '<##' at index {index}")
+        };
         if let Some(index_end) = find_same_level(None, &contents[index..], '>', false) {
             let new_content = if depth < config.max_depth {
                 parse_token(
+                    path.clone(),
                     config,
                     &contents[index..(index + index_end + 1)],
                     depth + 1,
@@ -199,6 +228,10 @@ pub fn resolve_tokens(
             };
             contents.replace_range(index..(index + index_end + 1), &new_content);
         }
+
+        last_token_index = index;
+        content_len = content_len_new;
+        content_len_new = contents.len();
     }
 
     contents
@@ -275,8 +308,10 @@ pub fn process_page(
     page: PathBuf,
     default_context: &HashMap<String, String>,
 ) {
-    println!("Transforming {} ...", page.to_str().unwrap_or_default());
-    let contents = resolve_tokens(config, read_section(&page), 0, default_context);
+    let relative_path = page.strip_prefix(config.root.clone()).unwrap_or(page.as_path());
+    let path_string = relative_path.to_string_lossy();
+    println!("Transforming {path_string} ...");
+    let contents = resolve_tokens(path_string.into(), config, read_section(&page), 0, default_context);
     write_contents(config, page, contents)
 }
 
@@ -334,6 +369,7 @@ pub fn find_same_level(
 }
 
 pub fn parse_token(
+    path: String,
     config: &Configuration,
     token: &str,
     current_depth: u8,
@@ -345,6 +381,7 @@ pub fn parse_token(
     match (embed_identifier.find("["), embed_identifier.find("]")) {
         (Some(open_index), Some(close_index)) => {
             return parse_folder_embed(
+                path,
                 config,
                 embed_identifier,
                 current_depth,
@@ -365,6 +402,7 @@ pub fn parse_token(
     ) {
         (Some(open_index), Some(close_index)) => {
             return parse_parametric_embed(
+                path,
                 config,
                 embed_identifier,
                 current_depth,
@@ -390,10 +428,11 @@ pub fn parse_token(
     }
 
     // If none of them worked, it's most likely a simple embed
-    parse_single_embed(config, embed_identifier, current_depth, context)
+    parse_single_embed(path, config, embed_identifier, current_depth, context)
 }
 
 pub fn parse_parametric_embed(
+    path: String,
     config: &Configuration,
     component: &str,
     current_depth: u8,
@@ -402,6 +441,7 @@ pub fn parse_parametric_embed(
 ) -> String {
     if brackets.1 - brackets.0 == 1 {
         parse_single_embed(
+            path,
             config,
             component[..brackets.0].trim(),
             current_depth,
@@ -450,6 +490,7 @@ pub fn parse_parametric_embed(
         }
 
         parse_single_embed(
+            path,
             config,
             component[..brackets.0].trim(),
             current_depth,
@@ -469,6 +510,7 @@ pub fn parse_variable(component: &str, context: &HashMap<String, String>) -> Str
 }
 
 pub fn parse_folder_embed(
+    path: String,
     config: &Configuration,
     component: &str,
     current_depth: u8,
@@ -519,7 +561,11 @@ pub fn parse_folder_embed(
 
             let mut content = String::default();
             for section in &collected_dirs[0..elem_count] {
+                let section_path = section.path();
+                let relative_path = section_path.strip_prefix(config.root.clone()).unwrap_or(&section_path);
+                let path_string = relative_path.to_string_lossy();
                 content.push_str(&resolve_tokens(
+                    path.clone() + " >> " + &path_string,
                     config,
                     read_section(&section.path()),
                     current_depth,
@@ -539,6 +585,7 @@ pub fn parse_folder_embed(
 }
 
 pub fn parse_single_embed(
+    path: String,
     config: &Configuration,
     component: &str,
     current_depth: u8,
@@ -547,7 +594,10 @@ pub fn parse_single_embed(
     let mut embed_file_path = component.to_owned();
     embed_file_path.push_str(".html");
     let component_path = config.root.clone().join("sections").join(embed_file_path);
+    let relative_path = component_path.as_path().strip_prefix(config.root.clone()).unwrap_or(component_path.as_path());
+    let path_string = relative_path.to_string_lossy();
     resolve_tokens(
+        path.clone() + " >> " + &path_string,
         config,
         read_section_or_default(&component_path),
         current_depth,

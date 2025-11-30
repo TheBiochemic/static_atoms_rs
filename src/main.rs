@@ -16,6 +16,7 @@ pub struct Configuration {
     clean: bool,
     hide_extension: bool,
     write: bool,
+    verbose: bool,
     max_depth: u8,
 }
 
@@ -37,6 +38,7 @@ impl std::fmt::Display for Configuration {
                 format!("  write: `{}`", self.write),
                 format!("  max_depth: `{}`", self.max_depth),
                 format!("  hide_extension: `{}`", self.hide_extension),
+                format!("  verbose: `{}`", self.verbose),
             ]
             .join("\n")
         )
@@ -60,6 +62,7 @@ fn main() {
         out: None,
         clean: false,
         write: true,
+        verbose: false,
         max_depth: DEFAULT_MAX_DEPTH,
         hide_extension: false,
     };
@@ -85,6 +88,11 @@ fn main() {
 
             if param.eq_ignore_ascii_case("hide-extension") {
                 config.hide_extension = true;
+                continue;
+            }
+
+            if param.eq_ignore_ascii_case("verbose") {
+                config.verbose = true;
                 continue;
             }
 
@@ -126,6 +134,11 @@ fn main() {
 
                     'h' => {
                         config.hide_extension = true;
+                        continue;
+                    }
+
+                    'v' => {
+                        config.verbose = true;
                         continue;
                     }
 
@@ -199,6 +212,7 @@ fn show_help() {
         \t\t\t\tthe new static website\n\
         \t--dry\t\t\tdo not write any files, to validate if the process runs\n\
         \t\t\t\tsuccessfully without errors\n\
+        \t--verbose\t\toutput extra stuff, for fixing issues\n\
         \t--depth\t\t\tsets the maximum recursion depth. Default is {DEFAULT_MAX_DEPTH}\n\
         \t--hide-extension\twhen writing the files into output directory, do not use\n\
         \t\t\t\tfile extensions, except for the index files.\n\

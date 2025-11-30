@@ -1,19 +1,27 @@
 # cargo install cargo-packager --locked
+# cargo install cargo-rpm --locked
 #
+# creating a release build of this project:
 # cargo build --release
+#
+# build a package for debian & ubuntu:
 # cargo packager --release
+#
+# build a package for fedora, bazzite and other rpm based systems
+# cargo rpm --release
 
 [package]
-name = "static_atoms_rs"
+name = "static_atoms"
 version = "2025.4.4"
 authors = ['Robert Lang <https://mastodon.social/@biochemic>']
 edition = "2024"
 description = "a terminal program to transform a web template into a static website using nothing more than a few extra tags"
 homepage = "https://github.com/TheBiochemic/static_atoms_rs"
+license = "GPL-3.0-only"
 
 [[bin]]
 name = "static_atoms"
-path = "src/bin.rs"
+path = "src/main.rs"
 
 [package.metadata.packager]
 before-packaging-command = "cargo build --release"

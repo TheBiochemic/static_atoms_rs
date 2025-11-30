@@ -15,6 +15,7 @@ pub fn get_config() -> Configuration {
         input_files: Vec::default(),
         clean: false,
         write: false,
+        verbose: true,
         max_depth: u8::MAX,
         hide_extension: false,
     }

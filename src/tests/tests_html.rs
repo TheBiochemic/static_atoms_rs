@@ -10,7 +10,7 @@ use crate::{
 fn parse_simple() {
     let config = get_config();
     let in_text = "<html><body><p>TEST</p></body></html>".to_owned();
-    let contents = resolve_tokens(&config, in_text.clone(), 0, &HashMap::new());
+    let contents = resolve_tokens("".into(), &config, in_text.clone(), 0, &HashMap::new());
 
     assert_eq!(in_text, contents);
 }
@@ -21,7 +21,7 @@ fn parse_embed() {
     create_test_page(FileType::FileHTML, &config, None, "my_embed", "<p>TEST</p>");
     let in_text = "<html><body><## my_embed></body></html>".to_owned();
     let out_text = "<html><body><p>TEST</p></body></html>".to_owned();
-    let contents = resolve_tokens(&config, in_text.clone(), 0, &HashMap::new());
+    let contents = resolve_tokens("".into(), &config, in_text.clone(), 0, &HashMap::new());
 
     assert_eq!(out_text, contents);
 }
@@ -32,7 +32,7 @@ fn parse_embed_brackets() {
     create_test_page(FileType::FileHTML, &config, None, "my_embed", "<p>TEST</p>");
     let in_text = "<html><body><## my_embed()></body></html>".to_owned();
     let out_text = "<html><body><p>TEST</p></body></html>".to_owned();
-    let contents = resolve_tokens(&config, in_text.clone(), 0, &HashMap::new());
+    let contents = resolve_tokens("".into(), &config, in_text.clone(), 0, &HashMap::new());
 
     assert_eq!(out_text, contents);
 }
@@ -45,7 +45,7 @@ fn parse_variable_embed() {
     let mut context = HashMap::new();
     context.insert("my_embed".to_owned(), "<p>TEST</p>".to_owned());
 
-    let contents = resolve_tokens(&config, in_text.clone(), 0, &context);
+    let contents = resolve_tokens("".into(), &config, in_text.clone(), 0, &context);
 
     assert_eq!(out_text, contents);
 }
@@ -84,7 +84,7 @@ fn parse_folder_embed() {
         "<p>4</p>",
     );
 
-    let contents = resolve_tokens(&config, in_text.clone(), 0, &HashMap::new());
+    let contents = resolve_tokens("".into(), &config, in_text.clone(), 0, &HashMap::new());
 
     assert_eq!(out_text, contents);
 }
@@ -123,7 +123,7 @@ fn parse_folder_limit_embed() {
         "<p>4</p>",
     );
 
-    let contents = resolve_tokens(&config, in_text.clone(), 0, &HashMap::new());
+    let contents = resolve_tokens("".into(), &config, in_text.clone(), 0, &HashMap::new());
 
     assert_eq!(out_text, contents);
 }
@@ -148,7 +148,7 @@ fn parse_default_variables() {
 
     let out_text = format!("<html><body>{version}{appname}{applink}{pages}</body></html>");
 
-    let contents = resolve_tokens(&config, in_text.clone(), 0, &context);
+    let contents = resolve_tokens("".into(), &config, in_text.clone(), 0, &context);
 
     assert_eq!(out_text, contents);
 }
@@ -166,7 +166,7 @@ fn parse_parametric() {
         "<p><## {var1}><## {var2}></p>",
     );
 
-    let contents = resolve_tokens(&config, in_text.clone(), 0, &HashMap::new());
+    let contents = resolve_tokens("".into(), &config, in_text.clone(), 0, &HashMap::new());
 
     assert_eq!(out_text, contents);
 }
@@ -185,7 +185,7 @@ fn parse_parametric_edge_cases() {
         "<p><## {var1}><## {var2}></p>",
     );
 
-    let contents = resolve_tokens(&config, in_text.clone(), 0, &HashMap::new());
+    let contents = resolve_tokens("".into(), &config, in_text.clone(), 0, &HashMap::new());
 
     assert_eq!(out_text, contents);
 }
