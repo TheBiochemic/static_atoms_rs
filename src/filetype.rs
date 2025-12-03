@@ -4,7 +4,7 @@ use std::path::PathBuf;
  * All the filetype related stuff goes here. I felt, that the
  * filetype might grow overtime, so i didn't want to have it in the bin.rs
  */
-
+#[derive(Clone)]
 pub enum FileType {
     Directory,
     FileHTML,

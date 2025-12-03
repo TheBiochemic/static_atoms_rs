@@ -39,6 +39,15 @@ impl std::fmt::Display for Configuration {
                 format!("  max_depth: `{}`", self.max_depth),
                 format!("  hide_extension: `{}`", self.hide_extension),
                 format!("  verbose: `{}`", self.verbose),
+                format!("  input_files: `{}`", {
+                    let mut array_string: String = "[".into();
+
+                    for path in &self.input_files {
+                        array_string = array_string + path.to_str().unwrap_or("") + ", ";
+                    }
+
+                    array_string + "]"
+                }),
             ]
             .join("\n")
         )
@@ -105,6 +114,12 @@ fn main() {
             if let Some(root_param) = param.strip_prefix("root=") {
                 let path: PathBuf = PathBuf::from(root_param);
                 config.root = path;
+                continue;
+            }
+
+            if let Some(input_param) = param.strip_prefix("in=") {
+                let path: PathBuf = PathBuf::from(input_param);
+                config.input_files.push(path);
                 continue;
             }
 

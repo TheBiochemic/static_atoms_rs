@@ -1,8 +1,10 @@
 use std::{
     collections::HashMap,
     ffi::OsStr,
-    fs, io,
-    path::{Path, PathBuf}, usize,
+    fs::{self, FileType},
+    io,
+    path::{Component, Path, PathBuf},
+    usize,
 };
 
 use crate::Configuration;
@@ -14,7 +16,11 @@ fn get_dist_path(config: &Configuration) -> PathBuf {
     }
 }
 
-fn copy_dir(config: &Configuration, from: impl AsRef<Path>, to: impl AsRef<Path>) -> io::Result<()> {
+fn copy_dir(
+    config: &Configuration,
+    from: impl AsRef<Path>,
+    to: impl AsRef<Path>,
+) -> io::Result<()> {
     fs::create_dir_all(&to)?;
     for entry in fs::read_dir(from)? {
         let entry = entry?;
@@ -24,9 +30,11 @@ fn copy_dir(config: &Configuration, from: impl AsRef<Path>, to: impl AsRef<Path>
         } else {
             let to_filename = to.as_ref().join(entry.file_name());
             if config.verbose {
-                println!("[verbose] copy file {} to {}", 
-                    entry.file_name().to_string_lossy(), 
-                    to_filename.to_string_lossy())
+                println!(
+                    "[verbose] copy file {} to {}",
+                    entry.file_name().to_string_lossy(),
+                    to_filename.to_string_lossy()
+                )
             }
             fs::copy(entry.path(), to_filename)?;
         }
@@ -34,8 +42,43 @@ fn copy_dir(config: &Configuration, from: impl AsRef<Path>, to: impl AsRef<Path>
     Ok(())
 }
 
+pub fn get_pages(config: &Configuration) -> Vec<PathBuf> {
+    fn read_folder_layer(path: PathBuf, pages_vec: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(&path).unwrap_or_else(|_| panic!("Wasn't able to completely go through the input directory. Does it exist and are you allowed to open it? Path: {}", path.to_string_lossy())).flatten() {
+                if let Ok(filetype) = entry.file_type() {
+                        if filetype.is_file() {
+                            pages_vec.push(entry.path());
+                        }
+
+                        if filetype.is_dir() {
+                            read_folder_layer(entry.path(), pages_vec);
+                        }
+                    }
+            }
+    }
+
+    let mut pages_vec: Vec<PathBuf> = Default::default();
+
+    if !config.input_files.is_empty() {
+        for input_file in &config.input_files {
+            if input_file.is_dir() {
+                read_folder_layer(input_file.clone(), &mut pages_vec);
+            }
+            if input_file.is_file() {
+                pages_vec.push(input_file.clone());
+            }
+        }
+    } else {
+        pages_vec.push(config.root.clone().join("index.html"));
+        let pages_path = config.root.clone().join("pages");
+        read_folder_layer(pages_path, &mut pages_vec);
+    }
+
+    pages_vec.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
+    pages_vec
+}
+
 pub fn run_dist(config: &Configuration) {
-    let pages_path = config.root.clone().join("pages");
     let media_path = config.root.clone().join("media");
     let root_path = config.root.clone().join("root");
     let dist_path = get_dist_path(config);
@@ -69,24 +112,21 @@ pub fn run_dist(config: &Configuration) {
 
     // Create default context
     println!("Building global Context");
-    let default_context = build_default_context(config);
+    let pages = get_pages(config);
+    let default_context = build_default_context(config, &pages);
 
     // Go through the pages directory
-    for page in fs::read_dir(pages_path).expect("Wasn't able to go through the pages directory. Does it exist and are you allowed to open it?") {
-        match page {
-            Ok(found_page) => {
-                let path = found_page.path();
-                let is_file = path.is_file();
-                let extension = path.extension().unwrap_or_default().to_string_lossy();
-                match (is_file, extension.as_ref()) {
-                    (true, "html") => {process_page(config, found_page.path(), &default_context);}
-                    (true, "md") => {process_page_markdown(config, found_page.path(), &default_context);}
-                    (true, _) => (),
-                    (false, _) => ()
-                };
-            },
-            Err(_) => println!("Couldn't open pages path, ignoring it"),
-        }
+    for page in pages {
+        let extension = page.extension().unwrap_or_default().to_string_lossy();
+        match extension.as_ref() {
+            "html" => {
+                process_page(config, page, &default_context);
+            }
+            "md" => {
+                process_page_markdown(config, page, &default_context);
+            }
+            _ => (),
+        };
     }
 
     process_page(
@@ -96,60 +136,55 @@ pub fn run_dist(config: &Configuration) {
     );
 }
 
-pub fn build_default_context(config: &Configuration) -> HashMap<String, String> {
-    let pages = {
-        let mut pages_string = String::default();
-        pages_string.push_str("<ul class=\"siteindex\">");
-        if fs::exists(config.root.clone().join("index.html")).unwrap_or(false) {
-            pages_string.push_str("<li><a href=\"/index.html\">index.html</a></li>");
+pub fn build_pages_context(config: &Configuration, input_pages: &[PathBuf]) -> String {
+    let mut pages_string = String::default();
+    pages_string.push_str("<ul class=\"siteindex\">");
+
+    for page in input_pages {
+        let mut relative_path = page
+            .strip_prefix(&config.root)
+            .map(|path| path.to_path_buf())
+            .unwrap_or_else(|err| {
+                println!("Wasn't able to resolve path when building pages context. {err}");
+                page.to_path_buf()
+            });
+
+        let mut filestem: String = relative_path
+            .file_stem()
+            .map(|os_str| os_str.to_str().unwrap_or(""))
+            .unwrap_or("")
+            .into();
+        relative_path.pop();
+
+        if filestem == "index" || !config.hide_extension {
+            filestem += ".html";
         }
 
-        let mut dirs: Vec<fs::DirEntry> = fs::read_dir(config.root.clone().join("pages"))
-            .map(|elem| {
-                elem.into_iter()
-                    .filter_map(|elem| elem.ok())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let relative_path_href = if filestem != "index.html" {
+            relative_path.push(filestem);
+            relative_path.to_string_lossy().to_string()
+        } else {
+            let path_string = relative_path.to_string_lossy().to_string();
+            relative_path.push(filestem);
+            path_string
+        };
 
-        dirs.sort_by_key(|elem| elem.file_name());
+        let relative_path_label = relative_path.to_string_lossy().to_string();
+        pages_string.push_str(&format!(
+            "<li><a href=\"/{relative_path_href}\">{relative_path_label}</a></li>"
+        ));
+    }
 
-        if !dirs.is_empty() {
-            pages_string.push_str("<li>");
-            if fs::exists(config.root.clone().join("index.html")).unwrap_or(false) {
-                pages_string.push_str("<a href=\"/pages/index.html\">pages/index.html</a>");
-            }
-            pages_string.push_str("<ul class=\"siteindex\">");
+    pages_string.push_str("</ul>");
+    pages_string
+}
 
-            for dir in dirs
-                .iter()
-                .filter(|elem| elem.file_name() != "index.html")
-            {
-                if dir.path().is_file()
-                    && dir.path().extension().and_then(OsStr::to_str) == Some("html")
-                {
-                    let filename_string = if !config.hide_extension {
-                        dir.file_name().into_string().unwrap_or_default()
-                    } else {
-                        let mut cloned_dir = dir.path().clone();
-                        let file_stem = cloned_dir.file_stem().unwrap().to_os_string();
-                        cloned_dir.pop();
-                        cloned_dir.push(file_stem);
-                        cloned_dir.file_name().unwrap().to_string_lossy().into()
+pub fn build_default_context(
+    config: &Configuration,
+    input_pages: &[PathBuf],
+) -> HashMap<String, String> {
+    let pages = build_pages_context(config, input_pages);
 
-                    };
-                    pages_string.push_str(&format!(
-                        "<li><a href=\"/pages/{filename_string}\">{filename_string}</a></li>"
-                    ));
-                }
-            }
-
-            pages_string.push_str("</ul></li>");
-        }
-
-        pages_string.push_str("</ul>");
-        pages_string
-    };
     HashMap::from([
         (
             "_VERSION".to_string(),
@@ -201,9 +236,10 @@ pub fn resolve_tokens(
     let mut content_len_new = usize::MAX - 1;
     let mut last_token_index = 0;
     while let Some(index) = contents.find("<##") {
-        
         if content_len == content_len_new && last_token_index == index {
-            println!("Cannot resolve this token properly, aborting. (Are the symbols <>'\"()[] used properly?)");
+            println!(
+                "Cannot resolve this token properly, aborting. (Are the symbols <>'\"()[] used properly?)"
+            );
             break;
         }
 
@@ -211,14 +247,25 @@ pub fn resolve_tokens(
             println!("[verbose] {path}: found next '<##' at index {index}")
         };
         if let Some(index_end) = find_same_level(None, &contents[index..], '>', false) {
+            if config.verbose {
+                println!("[verbose] {path}: found matching '>' after {index_end} char(s)",)
+            };
             let new_content = if depth < config.max_depth {
-                parse_token(
-                    path.clone(),
-                    config,
-                    &contents[index..(index + index_end + 1)],
-                    depth + 1,
-                    context,
-                )
+                let internal_contents = &contents[index..(index + index_end + 1)];
+                if config.verbose {
+                    let internal_contents_short = if internal_contents.len() > 50 {
+                        let end_pos = internal_contents.char_indices().nth_back(7).unwrap().0;
+                        String::from(&internal_contents[..35])
+                            + ".."
+                            + &internal_contents[end_pos..]
+                    } else {
+                        internal_contents.to_string()
+                    };
+                    println!(
+                        "[verbose] {path}: will parse the contents \"{internal_contents_short}\"",
+                    )
+                };
+                parse_token(path.clone(), config, internal_contents, depth + 1, context)
             } else {
                 println!(
                     "Surpassed max recursion depth of {}. Replacing deeper embeds with space",
@@ -308,10 +355,18 @@ pub fn process_page(
     page: PathBuf,
     default_context: &HashMap<String, String>,
 ) {
-    let relative_path = page.strip_prefix(config.root.clone()).unwrap_or(page.as_path());
+    let relative_path = page
+        .strip_prefix(config.root.clone())
+        .unwrap_or(page.as_path());
     let path_string = relative_path.to_string_lossy();
     println!("Transforming {path_string} ...");
-    let contents = resolve_tokens(path_string.into(), config, read_section(&page), 0, default_context);
+    let contents = resolve_tokens(
+        path_string.into(),
+        config,
+        read_section(&page),
+        0,
+        default_context,
+    );
     write_contents(config, page, contents)
 }
 
@@ -478,6 +533,13 @@ pub fn parse_parametric_embed(
 
             let value = &variables_string[(next_string_open + 1)..next_string_close];
 
+            if config.verbose {
+                println!(
+                    "[verbose] {path}: adding value for \'{}\' context. Content length: {}",
+                    variable_name,
+                    value.len()
+                )
+            }
             local_context.insert(variable_name.to_string(), value.to_string());
 
             variables_string = &variables_string[(next_string_close + 1)..];
@@ -562,7 +624,9 @@ pub fn parse_folder_embed(
             let mut content = String::default();
             for section in &collected_dirs[0..elem_count] {
                 let section_path = section.path();
-                let relative_path = section_path.strip_prefix(config.root.clone()).unwrap_or(&section_path);
+                let relative_path = section_path
+                    .strip_prefix(config.root.clone())
+                    .unwrap_or(&section_path);
                 let path_string = relative_path.to_string_lossy();
                 content.push_str(&resolve_tokens(
                     path.clone() + " >> " + &path_string,
@@ -594,7 +658,10 @@ pub fn parse_single_embed(
     let mut embed_file_path = component.to_owned();
     embed_file_path.push_str(".html");
     let component_path = config.root.clone().join("sections").join(embed_file_path);
-    let relative_path = component_path.as_path().strip_prefix(config.root.clone()).unwrap_or(component_path.as_path());
+    let relative_path = component_path
+        .as_path()
+        .strip_prefix(config.root.clone())
+        .unwrap_or(component_path.as_path());
     let path_string = relative_path.to_string_lossy();
     resolve_tokens(
         path.clone() + " >> " + &path_string,
