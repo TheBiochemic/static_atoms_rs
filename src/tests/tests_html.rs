@@ -164,7 +164,7 @@ fn parse_default_variables() {
         env!("CARGO_PKG_NAME")
     )
     .to_string();
-    let pages = "<ul class=\"siteindex\"><li><a href=\"/index.html\">index.html</a></li><li><a href=\"/pages/testpage.html\">pages/testpage.html</a></li></ul>";
+    let pages = "<ul class=\"siteindex\"><li><a href=\"/\">index.html</a></li><li><a href=\"/pages/testpage.html\">pages/testpage.html</a></li></ul>";
     let context = build_default_context(&config, &pages_vec);
 
     let in_text =

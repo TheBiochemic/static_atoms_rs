@@ -7,7 +7,9 @@ use std::{
     usize,
 };
 
-use crate::Configuration;
+pub mod markdown;
+
+use crate::{Configuration, dist::markdown::resolve_tokens_markdown};
 
 fn get_dist_path(config: &Configuration) -> PathBuf {
     match &config.out {
@@ -282,17 +284,6 @@ pub fn resolve_tokens(
     }
 
     contents
-}
-
-pub fn resolve_tokens_markdown(
-    config: &Configuration,
-    contents: String,
-    depth: u8,
-    context: &HashMap<String, String>,
-) -> String {
-    let mut converted = String::new();
-    for line in contents.lines() {}
-    converted
 }
 
 pub fn write_contents(config: &Configuration, page: PathBuf, contents: String) {

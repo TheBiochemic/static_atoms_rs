@@ -21,7 +21,7 @@ There are a few things to do to properly structure the project:
 * additional files living at project_root are in `<project_root>/root`
 * ~~your stylesheet sits in `<project_root>/style.css`~~ your global stylesheet now lives in `<project_root>/root`
 
-If you now want to embed the atom *my_embed.html* (or converted *my_embed.md*) into your page, you do the following:
+If you now want to embed the section *my_embed.html* (or converted *my_embed.md*) into your page, you do the following:
 ```html
 <!DOCTYPE html>
 <html lang="en">
@@ -65,7 +65,7 @@ There are a few variables, that are predefined, whenever a page is being parsed.
 | `<## {_VERSION}>` | `[## {_VERSION}]` | Gets replaced by the version of this Tool, such as `2025.4.1` |
 | `<## {_APPNAME}>` | `[## {_APPNAME}]` | Gets replaced by the name of this Tool, such as `static_atoms_rs` |
 | `<## {_APPLINK}>` | `[## {_APPLINK}]` | Gets replaced by a href link to the github of this tool, such as `<a href="..">static_atoms_rs</a>`
-| `<## {_PAGES}>`| `[## {_PAGES}]`| Gets replaced by an unordered list of href links to all available pages |
+| `<## {_PAGES}>`| `[## {_PAGES}]`| Gets replaced by an unordered list of href links to all available pages in html format |
 
 ## Available CLI Arguments
 For a complete list run `static_atoms help`
