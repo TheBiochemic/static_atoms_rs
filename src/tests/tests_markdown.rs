@@ -79,3 +79,38 @@ fn test_blockquotes_md() {
         "<blockquote><p>this is the first level</p><blockquote><p>this is second</p><blockquote><p>this is third level</p></blockquote></blockquote></blockquote>",
     );
 }
+
+#[test]
+fn test_formatted_blockquotes_md() {
+    test_md_in_out(
+        "> ## this is a headline\n >> this is *emphasized*\n > > > this is __bold__",
+        "<blockquote><h2>this is a headline</h2><blockquote><p>this is <em>emphasized</em></p><blockquote><p>this is <strong>bold</strong></p></blockquote></blockquote></blockquote>",
+    );
+}
+
+#[test]
+fn test_code_block_fence_md() {
+    test_md_in_out(
+        "```\nThis is test code\n\nthis is text after the empty space\n```\n\n  ```\n    inset text\n\n  ```",
+        "<pre><code>This is test code\n\nthis is text after the empty space</code></pre><pre><code>  inset text\n</code></pre>",
+    );
+}
+
+#[test]
+fn test_links_md() {
+    test_md_in_out(
+        "i have an inline [link here, click me](https://test.com/1) (if you want)\n[here](https://test.com/2 \"tooltip\") \
+        are multiple [links](https://test.com/3) available to click. [This is not] a link",
+        "<p>i have an inline <a href=\"https://test.com/1\">link here, click me</a> (if you want) <a href=\"https://test.com/2\" \
+        title=\"tooltip\">here</a> are multiple <a href=\"https://test.com/3\">links</a> available to click. [This is not] a link</p>",
+    );
+}
+
+#[test]
+fn test_image_md() {
+    test_md_in_out(
+        "this is an image: ![Image Alt](https://test.com/image.png \"tooltip\")\n\nand this is an image within a link: [![Image Alt2](https://test.com/image2.png)](https://test.com/1)",
+        "<p>this is an image: <img src=\"https://test.com/image.png\" alt=\"Image Alt\" title=\"tooltip\"></p>\
+        <p>and this is an image within a link: <a href=\"https://test.com/1\"><img src=\"https://test.com/image2.png\" alt=\"Image Alt2\"></a></p>",
+    );
+}

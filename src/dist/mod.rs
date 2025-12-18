@@ -374,7 +374,7 @@ pub fn find_same_level(
     }
 
     let level_test = |character, layers: &mut Vec<char>| match character {
-        a @ '(' | a @ '<' => layers.push(a),
+        a @ '(' | a @ '<' | a @ '[' => layers.push(a),
         a @ '"' | a @ '\'' => {
             if layers.last().is_some() && layers.last().unwrap().eq(&a) {
                 layers.pop();
@@ -384,6 +384,11 @@ pub fn find_same_level(
         }
         ')' => {
             if layers.last().is_some() && layers.last().unwrap().eq(&'(') {
+                layers.pop();
+            }
+        }
+        ']' => {
+            if layers.last().is_some() && layers.last().unwrap().eq(&'[') {
                 layers.pop();
             }
         }
