@@ -337,7 +337,13 @@ pub fn process_page_markdown(
     default_context: &HashMap<String, String>,
 ) {
     println!("Transforming {} ...", page.to_str().unwrap_or_default());
-    let contents = resolve_tokens_markdown(config, read_section(&page), 0, default_context);
+    let contents = resolve_tokens_markdown(
+        config,
+        read_section(&page),
+        0,
+        default_context,
+        ("<p>", "</p>"),
+    );
     write_contents(config, page, contents)
 }
 

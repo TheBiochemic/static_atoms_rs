@@ -7,6 +7,7 @@ pub fn resolve_tokens_markdown(
     contents: String,
     depth: u8,
     context: &HashMap<String, String>,
+    custom_tag_type: (&str, &str),
 ) -> String {
     let mut converted = String::new();
 
@@ -17,6 +18,7 @@ pub fn resolve_tokens_markdown(
         CodeBlockSpace,
         CodeBlockFence(usize),
         BlockQuote,
+        List { ordered: bool, indent: usize },
     }
 
     let mut top_level_block = TopLevelBlock::Nothing;
@@ -29,29 +31,50 @@ pub fn resolve_tokens_markdown(
         converted: &mut String,
         inner_content: &mut String,
         block: &mut TopLevelBlock,
+        custom_tag_type: &(&str, &str),
     ) {
         match block {
             TopLevelBlock::Nothing => (),
             TopLevelBlock::Paragraph => {
                 let paragraph = resolve_markdown_paragraph(&config, inner_content, depth, context);
                 converted.push_str(&paragraph);
-                converted.push_str("</p>")
+                converted.push_str(custom_tag_type.1)
             }
             TopLevelBlock::CodeBlockSpace | TopLevelBlock::CodeBlockFence(_) => {
                 converted.push_str(inner_content);
                 converted.push_str("</code></pre>")
             }
             TopLevelBlock::BlockQuote => {
-                let resolved =
-                    resolve_tokens_markdown(config, inner_content.clone(), depth, context);
+                let resolved = resolve_tokens_markdown(
+                    config,
+                    inner_content.clone(),
+                    depth,
+                    context,
+                    ("<p>", "</p>"),
+                );
 
                 converted.push_str(&resolved);
                 converted.push_str("</blockquote>")
+            }
+            TopLevelBlock::List { ordered, indent: _ } => {
+                let resolved = resolve_tokens_markdown(
+                    config,
+                    inner_content.clone(),
+                    depth,
+                    context,
+                    ("", ""),
+                );
+
+                converted.push_str(&resolved);
+                converted.push_str(if *ordered { "</ol>" } else { "</ul>" })
             }
         }
         *block = TopLevelBlock::Nothing;
         *inner_content = Default::default();
     }
+
+    // resolve all embeds
+    // TODO: Build a function for [## embed()], etc.
 
     for line in contents.lines() {
         let line_no_prefix = line.trim_start();
@@ -69,6 +92,7 @@ pub fn resolve_tokens_markdown(
                     &mut converted,
                     &mut inner_content,
                     &mut top_level_block,
+                    &custom_tag_type,
                 );
                 converted.push_str("<pre><code>");
                 top_level_block = TopLevelBlock::CodeBlockSpace;
@@ -94,6 +118,7 @@ pub fn resolve_tokens_markdown(
                         &mut converted,
                         &mut inner_content,
                         &mut top_level_block,
+                        &custom_tag_type,
                     );
                     continue;
                 }
@@ -105,6 +130,7 @@ pub fn resolve_tokens_markdown(
                     &mut converted,
                     &mut inner_content,
                     &mut top_level_block,
+                    &custom_tag_type,
                 );
                 let code_suffix = line_no_prefix.to_owned().split_off(3).trim().to_owned();
                 if code_suffix.is_empty() {
@@ -133,6 +159,9 @@ pub fn resolve_tokens_markdown(
             continue;
         }
 
+        // If the line is a list type
+        // TODO: Build a list function similar to the block quote
+
         //If the line is empty, ignore it
         if trimmed_line.is_empty() {
             finish_blocks(
@@ -142,6 +171,7 @@ pub fn resolve_tokens_markdown(
                 &mut converted,
                 &mut inner_content,
                 &mut top_level_block,
+                &custom_tag_type,
             );
             continue;
         }
@@ -173,6 +203,7 @@ pub fn resolve_tokens_markdown(
                 &mut converted,
                 &mut inner_content,
                 &mut top_level_block,
+                &custom_tag_type,
             );
             converted.push_str("</hr>");
             continue;
@@ -195,6 +226,7 @@ pub fn resolve_tokens_markdown(
                     &mut converted,
                     &mut inner_content,
                     &mut top_level_block,
+                    &custom_tag_type,
                 );
                 let paragraph = resolve_markdown_paragraph(
                     &config,
@@ -218,6 +250,7 @@ pub fn resolve_tokens_markdown(
                     &mut converted,
                     &mut inner_content,
                     &mut top_level_block,
+                    &custom_tag_type,
                 );
 
                 converted.push_str("<blockquote>");
@@ -238,8 +271,9 @@ pub fn resolve_tokens_markdown(
                 &mut converted,
                 &mut inner_content,
                 &mut top_level_block,
+                &custom_tag_type,
             );
-            converted.push_str("<p>");
+            converted.push_str(custom_tag_type.0);
             top_level_block = TopLevelBlock::Paragraph;
         } else {
             inner_content.push(' ');
@@ -255,6 +289,7 @@ pub fn resolve_tokens_markdown(
         &mut converted,
         &mut inner_content,
         &mut top_level_block,
+        &custom_tag_type,
     );
     converted
 }
@@ -293,9 +328,6 @@ fn resolve_markdown_paragraph(
         replacements.push((*code_section.start(), "<code>".into(), 1));
         replacements.push((*code_section.end(), "</code>".into(), 1));
     }
-
-    // get and filter embeds
-    // TODO: Build a function for [## embed()], etc.
 
     // get and filter all images and links
     let all_image_links: Vec<_> = output_text

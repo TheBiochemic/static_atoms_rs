@@ -4,7 +4,13 @@ use crate::{dist::markdown::resolve_tokens_markdown, tests::get_config};
 
 pub fn test_md_in_out(in_text: &str, out_text: &str) {
     let config = get_config();
-    let contents = resolve_tokens_markdown(&config, in_text.to_owned(), 0, &HashMap::new());
+    let contents = resolve_tokens_markdown(
+        &config,
+        in_text.to_owned(),
+        0,
+        &HashMap::new(),
+        ("<p>", "</p>"),
+    );
     assert_eq!(out_text.to_owned(), contents.to_owned());
 }
 
@@ -112,5 +118,13 @@ fn test_image_md() {
         "this is an image: ![Image Alt](https://test.com/image.png \"tooltip\")\n\nand this is an image within a link: [![Image Alt2](https://test.com/image2.png)](https://test.com/1)",
         "<p>this is an image: <img src=\"https://test.com/image.png\" alt=\"Image Alt\" title=\"tooltip\"></p>\
         <p>and this is an image within a link: <a href=\"https://test.com/1\"><img src=\"https://test.com/image2.png\" alt=\"Image Alt2\"></a></p>",
+    );
+}
+
+#[test]
+fn test_list_ordered_md() {
+    test_md_in_out(
+        "+ primary list item\n  - second level *is emphasized*\n    * third level first\n    - third level second\n    + third level third\n * back to first",
+        "<ul><li>primary list item <ul><li>second level <em>is emphasized</em><ul><li>third level first</li><li>third level second</li><li>third level third</li></ul></li></ul></li><li>back to first</li></ul>",
     );
 }
