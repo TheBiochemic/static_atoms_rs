@@ -76,3 +76,6 @@ For a complete list run `static_atoms help`
 | `static_atoms dist --out=<path>` | runs the transformation, but instead places the pages files into `<path>/pages` alongside with all the necessary media and stylesheet. |
 |`static_atoms dist --in=<relative_filepath>`| runs the main function and transforms either the files in the supplied directory or the actual file into static pages within `<current_dir>/dist/pages` alongside all the necessary media and stylesheet. |
 | `static_atoms dist --in=<pathA> --in=<pathB> --in=...` | does the same as above, but you can add multiple files/directories as input source |
+
+## Current Maintainers
+* [Robert Lang (BIOCHEMIST)](https://keyoxide.org/aspe%3Akeyoxide.org%3ALKNM7IFP5UH7XHC7F7HPBHE6RM)

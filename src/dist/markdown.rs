@@ -12,42 +12,54 @@ pub fn resolve_tokens_markdown(
     let mut converted = String::new();
 
     #[derive(PartialEq)]
+    enum ListType {
+        UnorderedPlus,
+        UnorderedDash,
+        UnorderedAsterisk,
+        OrderedDot,
+        OrderedBracket,
+    }
+
+    #[derive(PartialEq)]
     enum TopLevelBlock {
         Nothing,
-        Paragraph,
-        CodeBlockSpace,
-        CodeBlockFence(usize),
-        BlockQuote,
-        List { ordered: bool, indent: usize },
+        Paragraph(String),
+        CodeBlockSpace(String),
+        CodeBlockFence(usize, String),
+        BlockQuote(String),
+        List {
+            indent: usize,
+            list_type: ListType,
+            use_paragraph: bool,
+            list_items: Vec<String>,
+        },
     }
 
     let mut top_level_block = TopLevelBlock::Nothing;
-    let mut inner_content = String::new();
 
     fn finish_blocks(
         config: &Configuration,
         depth: u8,
         context: &HashMap<String, String>,
         converted: &mut String,
-        inner_content: &mut String,
         block: &mut TopLevelBlock,
         custom_tag_type: &(&str, &str),
     ) {
         match block {
             TopLevelBlock::Nothing => (),
-            TopLevelBlock::Paragraph => {
-                let paragraph = resolve_markdown_paragraph(&config, inner_content, depth, context);
+            TopLevelBlock::Paragraph(content) => {
+                let paragraph = resolve_markdown_paragraph(&config, content, depth, context);
                 converted.push_str(&paragraph);
                 converted.push_str(custom_tag_type.1)
             }
-            TopLevelBlock::CodeBlockSpace | TopLevelBlock::CodeBlockFence(_) => {
-                converted.push_str(inner_content);
+            TopLevelBlock::CodeBlockSpace(content) | TopLevelBlock::CodeBlockFence(_, content) => {
+                converted.push_str(content);
                 converted.push_str("</code></pre>")
             }
-            TopLevelBlock::BlockQuote => {
+            TopLevelBlock::BlockQuote(content) => {
                 let resolved = resolve_tokens_markdown(
                     config,
-                    inner_content.clone(),
+                    content.clone(),
                     depth,
                     context,
                     ("<p>", "</p>"),
@@ -56,21 +68,38 @@ pub fn resolve_tokens_markdown(
                 converted.push_str(&resolved);
                 converted.push_str("</blockquote>")
             }
-            TopLevelBlock::List { ordered, indent: _ } => {
-                let resolved = resolve_tokens_markdown(
-                    config,
-                    inner_content.clone(),
-                    depth,
-                    context,
-                    ("", ""),
-                );
+            TopLevelBlock::List {
+                indent: _,
+                list_type,
+                use_paragraph,
+                list_items,
+            } => {
+                let resolved_list_items = list_items.iter().map(|list_item| {
+                    let resolved = resolve_tokens_markdown(
+                        config,
+                        list_item.clone(),
+                        depth,
+                        context,
+                        if *use_paragraph {
+                            ("<p>", "</p>")
+                        } else {
+                            ("", "")
+                        },
+                    );
+                    converted.push_str("<li>");
+                    converted.push_str(&resolved);
+                    converted.push_str("</li>");
+                });
 
-                converted.push_str(&resolved);
-                converted.push_str(if *ordered { "</ol>" } else { "</ul>" })
+                converted.push_str(match &list_type {
+                    ListType::OrderedBracket | ListType::OrderedDot => "</ol>",
+                    ListType::UnorderedAsterisk
+                    | ListType::UnorderedDash
+                    | ListType::UnorderedPlus => "</ul>",
+                });
             }
         }
         *block = TopLevelBlock::Nothing;
-        *inner_content = Default::default();
     }
 
     // resolve all embeds
@@ -82,26 +111,33 @@ pub fn resolve_tokens_markdown(
 
         //If the line is the start of a space code block, create the code block
 
-        if line.starts_with("    ") && !matches!(top_level_block, TopLevelBlock::CodeBlockFence(_))
+        if line.starts_with("    ")
+            && !matches!(
+                top_level_block,
+                TopLevelBlock::CodeBlockFence(_, _)
+                    | TopLevelBlock::List {
+                        indent: _,
+                        list_type: _,
+                        use_paragraph: _,
+                        list_items: _
+                    }
+            )
         {
-            if top_level_block != TopLevelBlock::CodeBlockSpace {
+            if let TopLevelBlock::CodeBlockSpace(content) = &mut top_level_block {
+                let code_content = "\n".to_owned() + &line.to_owned().split_off(4);
+                content.push_str(code_content.as_str());
+                continue;
+            } else {
                 finish_blocks(
                     config,
                     depth,
                     context,
                     &mut converted,
-                    &mut inner_content,
                     &mut top_level_block,
                     &custom_tag_type,
                 );
                 converted.push_str("<pre><code>");
-                top_level_block = TopLevelBlock::CodeBlockSpace;
-                let code_content = line.to_owned().split_off(4);
-                inner_content.push_str(code_content.as_str());
-                continue;
-            } else {
-                let code_content = "\n".to_owned() + &line.to_owned().split_off(4);
-                inner_content.push_str(code_content.as_str());
+                top_level_block = TopLevelBlock::CodeBlockSpace(line.to_owned().split_off(4));
                 continue;
             }
         }
@@ -109,14 +145,13 @@ pub fn resolve_tokens_markdown(
         // If the line starts with a fence code block
 
         if line_no_prefix.starts_with("```") {
-            if let TopLevelBlock::CodeBlockFence(indent) = top_level_block {
+            if let TopLevelBlock::CodeBlockFence(indent, _) = top_level_block {
                 if trimmed_line == "```" {
                     finish_blocks(
                         config,
                         depth,
                         context,
                         &mut converted,
-                        &mut inner_content,
                         &mut top_level_block,
                         &custom_tag_type,
                     );
@@ -128,7 +163,6 @@ pub fn resolve_tokens_markdown(
                     depth,
                     context,
                     &mut converted,
-                    &mut inner_content,
                     &mut top_level_block,
                     &custom_tag_type,
                 );
@@ -141,26 +175,143 @@ pub fn resolve_tokens_markdown(
                     converted.push_str("\">");
                 }
                 let indent = line.len() - line_no_prefix.len();
-                top_level_block = TopLevelBlock::CodeBlockFence(indent);
+                top_level_block = TopLevelBlock::CodeBlockFence(indent, String::new());
                 continue;
             }
         }
 
-        if let TopLevelBlock::CodeBlockFence(indent) = top_level_block {
+        if let TopLevelBlock::CodeBlockFence(indent, content) = &mut top_level_block {
             let calculated_indent = line.len() - line_no_prefix.len();
-            let actual_offset = calculated_indent.saturating_sub(indent);
-            if !inner_content.is_empty() {
-                inner_content.push('\n');
+            let actual_offset = calculated_indent.saturating_sub(*indent);
+            if !content.is_empty() {
+                content.push('\n');
             }
 
             let offset_string = " ".repeat(actual_offset);
-            inner_content.push_str(offset_string.as_str());
-            inner_content.push_str(trimmed_line);
+            content.push_str(offset_string.as_str());
+            content.push_str(trimmed_line);
             continue;
         }
 
         // If the line is a list type
-        // TODO: Build a list function similar to the block quote
+        fn detect_unordered_list(line_no_prefix: &str) -> Option<(ListType, &str)> {
+            let list_type_prefix = line_no_prefix.get(0..=1);
+            match list_type_prefix {
+                Some(prefix @ "* ") => Some((ListType::UnorderedAsterisk, prefix)),
+                Some(prefix @ "+ ") => Some((ListType::UnorderedPlus, prefix)),
+                Some(prefix @ "- ") => Some((ListType::UnorderedDash, prefix)),
+                _ => None,
+            }
+        }
+
+        if let TopLevelBlock::List {
+            indent,
+            list_type,
+            use_paragraph,
+            list_items,
+        } = &mut top_level_block
+        {
+            // If the List has been initialized in a previous line, lets continue it
+            // first detect some of the information, like what type of list it is
+            let new_indent = line.len() - line_no_prefix.len();
+
+            if trimmed_line.is_empty() {
+                *use_paragraph = true;
+            }
+
+            match list_type {
+                ListType::UnorderedPlus => todo!(),
+                ListType::UnorderedDash => todo!(),
+                ListType::UnorderedAsterisk => todo!(),
+                ListType::OrderedDot => todo!(),
+                ListType::OrderedBracket => todo!(),
+            }
+        } else {
+            // All the stuff for initiating the unordered list
+            match detect_unordered_list(line_no_prefix) {
+                Some(unordered_list_type) => {
+                    finish_blocks(
+                        config,
+                        depth,
+                        context,
+                        &mut converted,
+                        &mut top_level_block,
+                        &custom_tag_type,
+                    );
+                    converted.push_str("<ul>");
+                    let indent = line.len() - line_no_prefix.len();
+
+                    let mut first_item = String::from(
+                        trimmed_line
+                            .strip_prefix(unordered_list_type.1)
+                            .unwrap_or(""),
+                    );
+
+                    first_item.push('\n');
+
+                    top_level_block = TopLevelBlock::List {
+                        indent,
+                        list_type: unordered_list_type.0,
+                        use_paragraph: false,
+                        list_items: vec![first_item],
+                    };
+                    continue;
+                }
+                None => (),
+            }
+
+            // All the stuff needed for initializing the ordered list
+            let mut list_number_str = "".to_owned();
+            let mut list_type = None;
+            for single_char in line_no_prefix.chars() {
+                match single_char {
+                    digit_char if digit_char.is_ascii_digit() => {
+                        list_number_str.push(digit_char);
+                    }
+                    ')' => list_type = Some(ListType::OrderedBracket),
+                    '.' => list_type = Some(ListType::OrderedDot),
+                    _ => break,
+                }
+            }
+
+            if let (Some(list_type), Ok(list_number)) = (list_type, {
+                let parsed: Result<usize, _> = list_number_str.parse();
+                parsed
+            }) {
+                finish_blocks(
+                    config,
+                    depth,
+                    context,
+                    &mut converted,
+                    &mut top_level_block,
+                    &custom_tag_type,
+                );
+
+                converted.push_str("<ol");
+                if list_number != 1 {
+                    let formatted_str = format!(" start=\"{list_number}\"");
+                    converted.push_str(&formatted_str);
+                }
+                converted.push_str(">");
+
+                let indent = line.len() - line_no_prefix.len();
+
+                let mut first_item = String::from(
+                    trimmed_line
+                        .get((list_number_str.len() + 1)..)
+                        .unwrap_or(""),
+                );
+
+                first_item.push('\n');
+
+                top_level_block = TopLevelBlock::List {
+                    indent,
+                    list_type: list_type,
+                    use_paragraph: false,
+                    list_items: vec![first_item],
+                };
+            }
+        }
 
         //If the line is empty, ignore it
         if trimmed_line.is_empty() {
@@ -169,7 +320,6 @@ pub fn resolve_tokens_markdown(
                 depth,
                 context,
                 &mut converted,
-                &mut inner_content,
                 &mut top_level_block,
                 &custom_tag_type,
             );
@@ -201,7 +351,6 @@ pub fn resolve_tokens_markdown(
                 depth,
                 context,
                 &mut converted,
-                &mut inner_content,
                 &mut top_level_block,
                 &custom_tag_type,
             );
@@ -224,7 +373,6 @@ pub fn resolve_tokens_markdown(
                     depth,
                     context,
                     &mut converted,
-                    &mut inner_content,
                     &mut top_level_block,
                     &custom_tag_type,
                 );
@@ -242,44 +390,48 @@ pub fn resolve_tokens_markdown(
 
         // If the line is a block quote
         if trimmed_line.starts_with(">") {
-            if top_level_block != TopLevelBlock::BlockQuote {
+            if let TopLevelBlock::BlockQuote(content) = &mut top_level_block {
+                content.push_str(trimmed_line.strip_prefix(">").unwrap_or(""));
+                content.push('\n');
+                continue;
+            } else {
                 finish_blocks(
                     config,
                     depth,
                     context,
                     &mut converted,
-                    &mut inner_content,
                     &mut top_level_block,
                     &custom_tag_type,
                 );
 
                 converted.push_str("<blockquote>");
-                top_level_block = TopLevelBlock::BlockQuote;
-            }
 
-            inner_content.push_str(trimmed_line.strip_prefix(">").unwrap_or(""));
-            inner_content.push('\n');
-            continue;
+                let mut content = String::new();
+                content.push_str(trimmed_line.strip_prefix(">").unwrap_or(""));
+                content.push('\n');
+
+                top_level_block = TopLevelBlock::BlockQuote(content);
+                continue;
+            }
         }
 
         // If the line is just a simple paragraph
-        if top_level_block != TopLevelBlock::Paragraph {
+        if let TopLevelBlock::Paragraph(content) = &mut top_level_block {
+            content.push(' ');
+            content.push_str(trimmed_line);
+        } else {
             finish_blocks(
                 config,
                 depth,
                 context,
                 &mut converted,
-                &mut inner_content,
                 &mut top_level_block,
                 &custom_tag_type,
             );
-            converted.push_str(custom_tag_type.0);
-            top_level_block = TopLevelBlock::Paragraph;
-        } else {
-            inner_content.push(' ');
-        }
 
-        inner_content.push_str(trimmed_line);
+            converted.push_str(custom_tag_type.0);
+            top_level_block = TopLevelBlock::Paragraph(trimmed_line.to_string());
+        }
     }
 
     finish_blocks(
@@ -287,7 +439,6 @@ pub fn resolve_tokens_markdown(
         depth,
         context,
         &mut converted,
-        &mut inner_content,
         &mut top_level_block,
         &custom_tag_type,
     );
