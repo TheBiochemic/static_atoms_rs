@@ -11,7 +11,11 @@ pub fn test_md_in_out(in_text: &str, out_text: &str) {
         &HashMap::new(),
         ("<p>", "</p>"),
     );
-    assert_eq!(out_text.to_owned(), contents.to_owned());
+    if out_text.to_owned() != contents.to_owned() {
+        panic!(
+            "Markdown Test Assertion failed:\n***Input***\n\n{in_text}\n\n***Expected***\n\n{out_text}\n\n***Received***\n\n{contents}\n"
+        );
+    }
 }
 
 #[test]
@@ -125,7 +129,7 @@ fn test_image_md() {
 fn test_list_unordered_md() {
     test_md_in_out(
         "+ primary list item\n  - second level *is emphasized*\n    * third level first\n    - third level second\n    + third level third\n * back to first",
-        "<ul><li>primary list item <ul><li>second level <em>is emphasized</em><ul><li>third level first</li><li>third level second</li><li>third level third</li></ul></li></ul></li><li>back to first</li></ul>",
+        "<ul><li>primary list item<ul><li>second level <em>is emphasized</em><ul><li>third level first</li><li>third level second</li><li>third level third</li></ul></li></ul></li><li>back to first</li></ul>",
     );
 }
 
@@ -133,6 +137,6 @@ fn test_list_unordered_md() {
 fn test_list_ordered_md() {
     test_md_in_out(
         "1) first line\n2) second line\n99. line with dot\n1. another line with dots. *Three* digits\n   - nested list",
-        "<ol><li>first line</li><li>second line</li></ol><ol start=\"99\"></li>line with dot</li><li>another line with dots. <em>Three</em> digits<ul><li>nested list</li></ul></li></ol>",
+        "<ol><li>first line</li><li>second line</li></ol><ol start=\"99\"><li>line with dot</li><li>another line with dots. <em>Three</em> digits<ul><li>nested list</li></ul></li></ol>",
     );
 }
