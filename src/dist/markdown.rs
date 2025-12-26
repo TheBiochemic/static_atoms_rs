@@ -86,7 +86,6 @@ pub fn resolve_tokens_markdown(
                 list_items,
             } => {
                 for list_item in list_items {
-                    println!("LIST_ITEM BEFORE RESOLVE: {list_item}");
                     let resolved = resolve_tokens_markdown(
                         path.clone(),
                         config,
@@ -212,8 +211,6 @@ pub fn resolve_tokens_markdown(
 
                 if new_indent <= (*indent + 1) {
                     // if this line is part of the list, and in the same indent
-                    println!("SAME INDENT -> INDENT: {indent}, NEW_INDENT: {new_indent}");
-
                     if new_list_type == *list_type {
                         *indent = new_indent;
                         let mut new_item = String::from(trimmed_line.get(offset..).unwrap_or(""));
@@ -234,8 +231,6 @@ pub fn resolve_tokens_markdown(
                     }
                 } else {
                     // if the line is part of the list, but a sub-list item
-                    println!("SUB-LIST ITEM -> INDENT: {indent}, NEW_INDENT: {new_indent}");
-
                     let last_item = list_items.last_mut().unwrap();
                     last_item.push_str(line.get(*indent..).unwrap_or(""));
                     last_item.push('\n');
@@ -646,11 +641,6 @@ fn resolve_markdown_paragraph(paragraph: &str) -> String {
 
     // Build the actual link and image tags out of the collected info
     for link in all_image_links {
-        println!(
-            "LINK_STARTS: tag_{}, {} + {} (closes: {}); LINK: {}",
-            link.1, link.0, link.2, link.3, link.4
-        );
-
         let mut title = None;
         let mut link_text = link.4.to_string();
         let first_title_section = link.4.find(" \"");
@@ -675,8 +665,6 @@ fn resolve_markdown_paragraph(paragraph: &str) -> String {
                     start_tag.push('"');
                 }
                 start_tag.push('>');
-
-                println!("START_TAG: {start_tag}");
 
                 replacements.push((link.0, start_tag, 1));
                 replacements.push((link.0 + link.2, "</a>".into(), link.3 + 3));
@@ -806,13 +794,6 @@ fn resolve_markdown_paragraph(paragraph: &str) -> String {
     // Finalize Replacements array
     replacements.sort_by_key(|elem| elem.0);
     replacements.reverse();
-
-    for replacement in &replacements {
-        println!(
-            "REPLACEMENTS: @{} -> {} (-{} chars)",
-            replacement.0, replacement.1, replacement.2
-        )
-    }
 
     for replacement in replacements {
         output_text.replace_range(
