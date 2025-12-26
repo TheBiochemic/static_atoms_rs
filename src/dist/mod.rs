@@ -214,30 +214,63 @@ pub fn read_section(path: &PathBuf) -> String {
     fs::read_to_string(path).expect(&file_error)
 }
 
-pub fn read_section_or_default(path: &PathBuf) -> String {
-    match fs::read_to_string(path) {
-        Ok(contents) => contents,
-        Err(_) => {
-            println!(
-                "Wasn't able to read the file contents of `{}`. returning empty component",
-                path.to_string_lossy()
-            );
-            String::default()
+pub fn resolve_tokens_from_path(
+    path_string: String,
+    path: &PathBuf,
+    config: &Configuration,
+    depth: u8,
+    context: &HashMap<String, String>,
+) -> Option<String> {
+    let relative_path = path
+        .strip_prefix(config.root.clone())
+        .unwrap_or(path.as_path());
+
+    for filetype in crate::filetype::FileType::get_valid_filetypes() {
+        let path_with_extension =
+            if path.extension().and_then(OsStr::to_str) != Some(filetype.extension().into()) {
+                let mut new_path = path.clone();
+                new_path.add_extension(filetype.extension());
+                new_path
+            } else {
+                path.clone()
+            };
+        if let Ok(contents) = fs::read_to_string(path_with_extension) {
+            return Some(filetype.convert_content(
+                relative_path.to_string_lossy().to_string() + " >> " + &path_string,
+                &contents,
+                config,
+                depth + 1,
+                context,
+            ));
         }
     }
+
+    None
 }
 
-pub fn resolve_tokens(
+pub fn resolve_tokens_html(
     path: String,
     config: &Configuration,
-    mut contents: String,
+    contents: &str,
     depth: u8,
     context: &HashMap<String, String>,
 ) -> String {
+    resolve_embeds(path, config, contents, depth, context, ("<##", '>'))
+}
+
+pub fn resolve_embeds(
+    path: String,
+    config: &Configuration,
+    contents_str: &str,
+    depth: u8,
+    context: &HashMap<String, String>,
+    embed_symbols: (&str, char),
+) -> String {
+    let mut contents = contents_str.to_string();
     let mut content_len = usize::MAX;
     let mut content_len_new = usize::MAX - 1;
     let mut last_token_index = 0;
-    while let Some(index) = contents.find("<##") {
+    while let Some(index) = contents.find(embed_symbols.0) {
         if content_len == content_len_new && last_token_index == index {
             println!(
                 "Cannot resolve this token properly, aborting. (Are the symbols <>'\"()[] used properly?)"
@@ -246,11 +279,17 @@ pub fn resolve_tokens(
         }
 
         if config.verbose {
-            println!("[verbose] {path}: found next '<##' at index {index}")
+            println!(
+                "[verbose] {path}: found next '{}' at index {index}",
+                embed_symbols.0
+            )
         };
-        if let Some(index_end) = find_same_level(None, &contents[index..], '>', false) {
+        if let Some(index_end) = find_same_level(None, &contents[index..], embed_symbols.1, false) {
             if config.verbose {
-                println!("[verbose] {path}: found matching '>' after {index_end} char(s)",)
+                println!(
+                    "[verbose] {path}: found matching '{}' after {index_end} char(s)",
+                    embed_symbols.1
+                )
             };
             let new_content = if depth < config.max_depth {
                 let internal_contents = &contents[index..(index + index_end + 1)];
@@ -267,7 +306,7 @@ pub fn resolve_tokens(
                         "[verbose] {path}: will parse the contents \"{internal_contents_short}\"",
                     )
                 };
-                parse_token(path.clone(), config, internal_contents, depth + 1, context)
+                parse_token(path.clone(), config, internal_contents, depth, context)
             } else {
                 println!(
                     "Surpassed max recursion depth of {}. Replacing deeper embeds with space",
@@ -336,13 +375,19 @@ pub fn process_page_markdown(
     page: PathBuf,
     default_context: &HashMap<String, String>,
 ) {
+    let relative_path = page
+        .strip_prefix(config.root.clone())
+        .unwrap_or(page.as_path());
+    let path_string = relative_path.to_string_lossy();
     println!("Transforming {} ...", page.to_str().unwrap_or_default());
     let contents = resolve_tokens_markdown(
+        path_string.into(),
         config,
-        read_section(&page),
+        &read_section(&page),
         0,
         default_context,
         ("<p>", "</p>"),
+        false,
     );
     write_contents(config, page, contents)
 }
@@ -357,10 +402,10 @@ pub fn process_page(
         .unwrap_or(page.as_path());
     let path_string = relative_path.to_string_lossy();
     println!("Transforming {path_string} ...");
-    let contents = resolve_tokens(
+    let contents = resolve_tokens_html(
         path_string.into(),
         config,
-        read_section(&page),
+        &read_section(&page),
         0,
         default_context,
     );
@@ -625,18 +670,22 @@ pub fn parse_folder_embed(
 
             let mut content = String::default();
             for section in &collected_dirs[0..elem_count] {
-                let section_path = section.path();
-                let relative_path = section_path
-                    .strip_prefix(config.root.clone())
-                    .unwrap_or(&section_path);
-                let path_string = relative_path.to_string_lossy();
-                content.push_str(&resolve_tokens(
-                    path.clone() + " >> " + &path_string,
+                let resolved_content = if let Some(resolved_content) = resolve_tokens_from_path(
+                    path.clone(),
+                    &section.path(),
                     config,
-                    read_section(&section.path()),
                     current_depth,
                     context,
-                ));
+                ) {
+                    resolved_content
+                } else {
+                    println!(
+                        "Wasn't able to find embed at path \'{}\', returning empty component.",
+                        section.path().to_string_lossy()
+                    );
+                    String::default()
+                };
+                content.push_str(&resolved_content);
             }
             content
         }
@@ -657,19 +706,23 @@ pub fn parse_single_embed(
     current_depth: u8,
     context: &HashMap<String, String>,
 ) -> String {
-    let mut embed_file_path = component.to_owned();
-    embed_file_path.push_str(".html");
-    let component_path = config.root.clone().join("sections").join(embed_file_path);
+    let component_path = config.root.clone().join("sections").join(component);
     let relative_path = component_path
         .as_path()
         .strip_prefix(config.root.clone())
         .unwrap_or(component_path.as_path());
     let path_string = relative_path.to_string_lossy();
-    resolve_tokens(
-        path.clone() + " >> " + &path_string,
+
+    if let Some(converted_content) = resolve_tokens_from_path(
+        path.clone(),
+        &component_path,
         config,
-        read_section_or_default(&component_path),
         current_depth,
         context,
-    )
+    ) {
+        converted_content
+    } else {
+        println!("Wasn't able to read the file contents of `{path}`. returning empty component",);
+        String::default()
+    }
 }

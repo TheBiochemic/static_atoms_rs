@@ -48,7 +48,7 @@ fn create_embed_objects(
         }
 
         _ = fs::create_dir_all(path.clone());
-        path = path.join(format!("{page_name}{}", filetype.file_suffix()));
+        path = path.join(format!("{page_name}.{}", filetype.extension()));
         _ = fs::write(path, content);
 
         // Sleep for slow filesystems

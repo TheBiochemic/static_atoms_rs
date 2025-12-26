@@ -1,14 +1,21 @@
 use std::{collections::HashMap, ops::Sub};
 
-use crate::{Configuration, dist::find_same_level};
+use crate::{
+    Configuration,
+    dist::{find_same_level, resolve_embeds},
+};
 
 pub fn resolve_tokens_markdown(
+    path: String,
     config: &Configuration,
-    contents: String,
+    contents: &str,
     depth: u8,
     context: &HashMap<String, String>,
     custom_tag_type: (&str, &str),
+    ignore_list_type: bool,
 ) -> String {
+    let contents = resolve_embeds(path.clone(), config, contents, depth, context, ("[##", ']'));
+
     let mut converted = String::new();
 
     #[derive(PartialEq)]
@@ -39,6 +46,7 @@ pub fn resolve_tokens_markdown(
     let mut prev_line_was_empty = false;
 
     fn finish_blocks(
+        path: String,
         config: &Configuration,
         depth: u8,
         context: &HashMap<String, String>,
@@ -59,11 +67,13 @@ pub fn resolve_tokens_markdown(
             }
             TopLevelBlock::BlockQuote(content) => {
                 let resolved = resolve_tokens_markdown(
+                    path,
                     config,
-                    content.clone(),
+                    content,
                     depth,
                     context,
                     ("<p>", "</p>"),
+                    false,
                 );
 
                 converted.push_str(&resolved);
@@ -76,9 +86,11 @@ pub fn resolve_tokens_markdown(
                 list_items,
             } => {
                 for list_item in list_items {
+                    println!("LIST_ITEM BEFORE RESOLVE: {list_item}");
                     let resolved = resolve_tokens_markdown(
+                        path.clone(),
                         config,
-                        list_item.clone(),
+                        list_item,
                         depth,
                         context,
                         if *use_paragraph {
@@ -86,6 +98,7 @@ pub fn resolve_tokens_markdown(
                         } else {
                             ("", "")
                         },
+                        true,
                     );
                     converted.push_str("<li>");
                     converted.push_str(&resolved);
@@ -110,103 +123,37 @@ pub fn resolve_tokens_markdown(
         let line_no_prefix = line.trim_start();
         let trimmed_line = line_no_prefix.trim_end();
 
-        //If the line is the start of a space code block, create the code block
-        if line.starts_with("    ")
-            && !matches!(
-                top_level_block,
-                TopLevelBlock::CodeBlockFence(_, _)
-                    | TopLevelBlock::List {
-                        indent: _,
-                        list_type: _,
-                        use_paragraph: _,
-                        list_items: _
-                    }
-            )
-        {
-            if let TopLevelBlock::CodeBlockSpace(content) = &mut top_level_block {
-                let code_content = "\n".to_owned() + &line.to_owned().split_off(4);
-                content.push_str(code_content.as_str());
-                prev_line_was_empty = false;
-                continue;
-            } else {
-                finish_blocks(
-                    config,
-                    depth,
-                    context,
-                    &mut converted,
-                    &mut top_level_block,
-                    &custom_tag_type,
-                );
-                converted.push_str("<pre><code>");
-                top_level_block = TopLevelBlock::CodeBlockSpace(line.to_owned().split_off(4));
-                prev_line_was_empty = false;
-                continue;
-            }
-        }
-
-        // If the line starts with a fence code block
-        if line_no_prefix.starts_with("```") {
-            if let TopLevelBlock::CodeBlockFence(indent, _) = top_level_block {
-                if trimmed_line == "```" {
-                    finish_blocks(
-                        config,
-                        depth,
-                        context,
-                        &mut converted,
-                        &mut top_level_block,
-                        &custom_tag_type,
-                    );
-                    prev_line_was_empty = false;
-                    continue;
-                }
-            } else {
-                finish_blocks(
-                    config,
-                    depth,
-                    context,
-                    &mut converted,
-                    &mut top_level_block,
-                    &custom_tag_type,
-                );
-                let code_suffix = line_no_prefix.to_owned().split_off(3).trim().to_owned();
-                if code_suffix.is_empty() {
-                    converted.push_str("<pre><code>");
-                } else {
-                    converted.push_str("<pre><code class=\"language-");
-                    converted.push_str(&code_suffix);
-                    converted.push_str("\">");
-                }
-                let indent = line.len() - line_no_prefix.len();
-                top_level_block = TopLevelBlock::CodeBlockFence(indent, String::new());
-                prev_line_was_empty = false;
-                continue;
-            }
-        }
-
-        if let TopLevelBlock::CodeBlockFence(indent, content) = &mut top_level_block {
-            let calculated_indent = line.len() - line_no_prefix.len();
-            let actual_offset = calculated_indent.saturating_sub(*indent);
-            if !content.is_empty() {
-                content.push('\n');
-            }
-
-            let offset_string = " ".repeat(actual_offset);
-            content.push_str(offset_string.as_str());
-            content.push_str(trimmed_line);
-            prev_line_was_empty = false;
-            continue;
-        }
-
         // If the line is a list type
         // Detect the type of list of a line and if it's a ordered list, also it's number
         type TrimOffset = usize;
         type ParsedNumber = usize;
-        fn detect_list_type(line_no_prefix: &str) -> Option<(ListType, ParsedNumber, TrimOffset)> {
+        fn detect_list_type(
+            line_no_prefix: &str,
+            ignore_list_type: bool,
+        ) -> Option<(ListType, ParsedNumber, TrimOffset)> {
             let list_type_prefix = line_no_prefix.get(0..=1);
             match list_type_prefix {
-                Some("* ") => return Some((ListType::UnorderedAsterisk, 0, 2)),
-                Some("+ ") => return Some((ListType::UnorderedPlus, 0, 2)),
-                Some("- ") => return Some((ListType::UnorderedDash, 0, 2)),
+                Some("* ") => {
+                    return if ignore_list_type {
+                        Some((ListType::UnorderedAsterisk, 0, 2))
+                    } else {
+                        Some((ListType::UnorderedAsterisk, 0, 2))
+                    };
+                }
+                Some("+ ") => {
+                    return if ignore_list_type {
+                        Some((ListType::UnorderedAsterisk, 0, 2))
+                    } else {
+                        Some((ListType::UnorderedPlus, 0, 2))
+                    };
+                }
+                Some("- ") => {
+                    return if ignore_list_type {
+                        Some((ListType::UnorderedAsterisk, 0, 2))
+                    } else {
+                        Some((ListType::UnorderedDash, 0, 2))
+                    };
+                }
                 _ => (),
             };
 
@@ -251,18 +198,22 @@ pub fn resolve_tokens_markdown(
             let new_indent = line.len() - line_no_prefix.len();
 
             if trimmed_line.is_empty() {
-                *use_paragraph = true;
                 list_items.last_mut().unwrap().push('\n');
                 prev_line_was_empty = true;
                 continue;
             }
 
             // Check if that line is a list
-            let detected_list_type = detect_list_type(line_no_prefix);
+            let detected_list_type = detect_list_type(line_no_prefix, ignore_list_type);
             if let Some((new_list_type, _, offset)) = detected_list_type {
-                println!("INDENT: {indent}, NEW_INDENT: {new_indent}");
-                if (*indent + 2) > new_indent {
+                if prev_line_was_empty {
+                    *use_paragraph = true;
+                }
+
+                if new_indent <= (*indent + 1) {
                     // if this line is part of the list, and in the same indent
+                    println!("SAME INDENT -> INDENT: {indent}, NEW_INDENT: {new_indent}");
+
                     if new_list_type == *list_type {
                         *indent = new_indent;
                         let mut new_item = String::from(trimmed_line.get(offset..).unwrap_or(""));
@@ -272,6 +223,7 @@ pub fn resolve_tokens_markdown(
                         continue;
                     } else {
                         finish_blocks(
+                            path.clone(),
                             config,
                             depth,
                             context,
@@ -282,8 +234,10 @@ pub fn resolve_tokens_markdown(
                     }
                 } else {
                     // if the line is part of the list, but a sub-list item
+                    println!("SUB-LIST ITEM -> INDENT: {indent}, NEW_INDENT: {new_indent}");
+
                     let last_item = list_items.last_mut().unwrap();
-                    last_item.push_str(line.get(new_indent..).unwrap_or(""));
+                    last_item.push_str(line.get(*indent..).unwrap_or(""));
                     last_item.push('\n');
                     prev_line_was_empty = false;
                     continue;
@@ -292,6 +246,7 @@ pub fn resolve_tokens_markdown(
                 // if the detected line is not a list element
                 if prev_line_was_empty {
                     finish_blocks(
+                        path.clone(),
                         config,
                         depth,
                         context,
@@ -299,18 +254,8 @@ pub fn resolve_tokens_markdown(
                         &mut top_level_block,
                         &custom_tag_type,
                     );
-                } else {
                 }
             }
-
-            /*match list_type {
-                ListType::UnorderedPlus if list_type_prefix == Some("+ ") => todo!(),
-                ListType::UnorderedDash if list_type_prefix == Some("- ") => todo!(),
-                ListType::UnorderedAsterisk if list_type_prefix == Some("* ") => todo!(),
-                ListType::OrderedDot => todo!(),
-                ListType::OrderedBracket => todo!(),
-                _ => (),
-            }*/
         }
 
         // If the line is not a list, or not a list anymore (needs to be detected)
@@ -323,10 +268,11 @@ pub fn resolve_tokens_markdown(
                 list_items: _
             }
         ) {
-            let detected_list_type = detect_list_type(line_no_prefix);
+            let detected_list_type = detect_list_type(line_no_prefix, ignore_list_type);
             let indent = line.len() - line_no_prefix.len();
             if detected_list_type.is_some() {
                 finish_blocks(
+                    path.clone(),
                     config,
                     depth,
                     context,
@@ -380,9 +326,100 @@ pub fn resolve_tokens_markdown(
             }
         }
 
+        //If the line is the start of a space code block, create the code block
+        if line.starts_with("    ")
+            && !matches!(
+                top_level_block,
+                TopLevelBlock::CodeBlockFence(_, _)
+                    | TopLevelBlock::List {
+                        indent: _,
+                        list_type: _,
+                        use_paragraph: _,
+                        list_items: _
+                    }
+            )
+        {
+            if let TopLevelBlock::CodeBlockSpace(content) = &mut top_level_block {
+                let code_content = "\n".to_owned() + &line.to_owned().split_off(4);
+                content.push_str(code_content.as_str());
+                prev_line_was_empty = false;
+                continue;
+            } else {
+                finish_blocks(
+                    path.clone(),
+                    config,
+                    depth,
+                    context,
+                    &mut converted,
+                    &mut top_level_block,
+                    &custom_tag_type,
+                );
+                converted.push_str("<pre><code>");
+                top_level_block = TopLevelBlock::CodeBlockSpace(line.to_owned().split_off(4));
+                prev_line_was_empty = false;
+                continue;
+            }
+        }
+
+        // If the line starts with a fence code block
+        if line_no_prefix.starts_with("```") {
+            if let TopLevelBlock::CodeBlockFence(indent, _) = top_level_block {
+                if trimmed_line == "```" {
+                    finish_blocks(
+                        path.clone(),
+                        config,
+                        depth,
+                        context,
+                        &mut converted,
+                        &mut top_level_block,
+                        &custom_tag_type,
+                    );
+                    prev_line_was_empty = false;
+                    continue;
+                }
+            } else {
+                finish_blocks(
+                    path.clone(),
+                    config,
+                    depth,
+                    context,
+                    &mut converted,
+                    &mut top_level_block,
+                    &custom_tag_type,
+                );
+                let code_suffix = line_no_prefix.to_owned().split_off(3).trim().to_owned();
+                if code_suffix.is_empty() {
+                    converted.push_str("<pre><code>");
+                } else {
+                    converted.push_str("<pre><code class=\"language-");
+                    converted.push_str(&code_suffix);
+                    converted.push_str("\">");
+                }
+                let indent = line.len() - line_no_prefix.len();
+                top_level_block = TopLevelBlock::CodeBlockFence(indent, String::new());
+                prev_line_was_empty = false;
+                continue;
+            }
+        }
+
+        if let TopLevelBlock::CodeBlockFence(indent, content) = &mut top_level_block {
+            let calculated_indent = line.len() - line_no_prefix.len();
+            let actual_offset = calculated_indent.saturating_sub(*indent);
+            if !content.is_empty() {
+                content.push('\n');
+            }
+
+            let offset_string = " ".repeat(actual_offset);
+            content.push_str(offset_string.as_str());
+            content.push_str(trimmed_line);
+            prev_line_was_empty = false;
+            continue;
+        }
+
         //If the line is empty, ignore it
         if trimmed_line.is_empty() {
             finish_blocks(
+                path.clone(),
                 config,
                 depth,
                 context,
@@ -415,6 +452,7 @@ pub fn resolve_tokens_markdown(
 
         if insert_hr {
             finish_blocks(
+                path.clone(),
                 config,
                 depth,
                 context,
@@ -438,6 +476,7 @@ pub fn resolve_tokens_markdown(
 
             if header_type > 0 && header_type < 6 {
                 finish_blocks(
+                    path.clone(),
                     config,
                     depth,
                     context,
@@ -467,6 +506,7 @@ pub fn resolve_tokens_markdown(
                 continue;
             } else {
                 finish_blocks(
+                    path.clone(),
                     config,
                     depth,
                     context,
@@ -491,23 +531,39 @@ pub fn resolve_tokens_markdown(
         if let TopLevelBlock::Paragraph(content) = &mut top_level_block {
             content.push(' ');
             content.push_str(trimmed_line);
-        } else {
-            finish_blocks(
-                config,
-                depth,
-                context,
-                &mut converted,
-                &mut top_level_block,
-                &custom_tag_type,
-            );
-
-            converted.push_str(custom_tag_type.0);
-            top_level_block = TopLevelBlock::Paragraph(trimmed_line.to_string());
             prev_line_was_empty = false;
+        } else {
+            if let TopLevelBlock::List {
+                indent,
+                list_type,
+                use_paragraph,
+                list_items,
+            } = &mut top_level_block
+            {
+                let last_elem = list_items.last_mut().unwrap();
+                last_elem.push(' ');
+                last_elem.push_str(trimmed_line);
+                prev_line_was_empty = false;
+            } else {
+                finish_blocks(
+                    path.clone(),
+                    config,
+                    depth,
+                    context,
+                    &mut converted,
+                    &mut top_level_block,
+                    &custom_tag_type,
+                );
+
+                converted.push_str(custom_tag_type.0);
+                top_level_block = TopLevelBlock::Paragraph(trimmed_line.to_string());
+                prev_line_was_empty = false;
+            }
         }
     }
 
     finish_blocks(
+        path,
         config,
         depth,
         context,

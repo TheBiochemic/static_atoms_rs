@@ -1,15 +1,21 @@
 use std::collections::HashMap;
 
-use crate::{dist::markdown::resolve_tokens_markdown, tests::get_config};
+use crate::{
+    dist::{markdown::resolve_tokens_markdown, resolve_tokens_html},
+    filetype::FileType,
+    tests::{create_test_section, get_config},
+};
 
 pub fn test_md_in_out(in_text: &str, out_text: &str) {
     let config = get_config();
     let contents = resolve_tokens_markdown(
+        "".into(),
         &config,
-        in_text.to_owned(),
+        in_text,
         0,
         &HashMap::new(),
         ("<p>", "</p>"),
+        false,
     );
     if out_text.to_owned() != contents.to_owned() {
         panic!(
@@ -128,7 +134,7 @@ fn test_image_md() {
 #[test]
 fn test_list_unordered_md() {
     test_md_in_out(
-        "+ primary list item\n  - second level *is emphasized*\n    * third level first\n    - third level second\n    + third level third\n * back to first",
+        "+ primary list item\n  - second level *is emphasized*\n    * third level first\n    - third level second\n    + third level third\n + back to first",
         "<ul><li>primary list item<ul><li>second level <em>is emphasized</em><ul><li>third level first</li><li>third level second</li><li>third level third</li></ul></li></ul></li><li>back to first</li></ul>",
     );
 }
@@ -139,4 +145,78 @@ fn test_list_ordered_md() {
         "1) first line\n2) second line\n99. line with dot\n1. another line with dots. *Three* digits\n   - nested list",
         "<ol><li>first line</li><li>second line</li></ol><ol start=\"99\"><li>line with dot</li><li>another line with dots. <em>Three</em> digits<ul><li>nested list</li></ul></li></ol>",
     );
+}
+
+#[test]
+fn test_after_list_md() {
+    test_md_in_out(
+        "* first line\n* second line\n\nparagraph after text",
+        "<ul><li>first line</li><li>second line</li></ul><p>paragraph after text</p>",
+    );
+}
+
+#[test]
+fn test_mixed_multi_md_html() {
+    let config = get_config();
+    let in_text = "<html><body><## embeds_md/two></body></html>";
+    let out_text = "<html><body><ul><li>a List with an embed</li><li><p>this is some multiline markdown embed.</p></li></ul></body></html>".to_owned();
+    create_test_section(
+        FileType::FileMarkdown,
+        &config,
+        vec!["embeds_md"],
+        "one",
+        "this is some\nmultiline markdown embed.",
+    );
+    create_test_section(
+        FileType::FileMarkdown,
+        &config,
+        vec!["embeds_md"],
+        "two",
+        "* a List with an embed\n* [## embeds_md/one]",
+    );
+
+    let contents = resolve_tokens_html("".into(), &config, &in_text, 0, &HashMap::new());
+
+    assert_eq!(out_text, contents);
+}
+
+#[test]
+fn test_multi_files_md() {
+    let config = get_config();
+    let in_text = "this is some text, that has [## embeds_md/included_files] and\n uses [## embeds_md/markdown_files()] for layouting and styling. You can even use variables: \n# [## {CUSTOM_VAR}]";
+    let out_text = "<p>this is some text, that has <p><em>a few included files</em></p> \
+                            and uses <p><strong>markdown files</strong></p> for layouting and styling. You can even use variables:</p><h1><em>Like this one</em></h1>".to_owned();
+    let custom_context = {
+        let mut context: HashMap<String, String> = HashMap::new();
+        context.insert("CUSTOM_VAR".into(), "*Like this one*".into());
+        context
+    };
+
+    create_test_section(
+        FileType::FileMarkdown,
+        &config,
+        vec!["embeds_md"],
+        "included_files",
+        "_a few included files_",
+    );
+
+    create_test_section(
+        FileType::FileMarkdown,
+        &config,
+        vec!["embeds_md"],
+        "markdown_files",
+        "**markdown files**",
+    );
+
+    let contents = resolve_tokens_markdown(
+        "".into(),
+        &config,
+        &in_text,
+        0,
+        &custom_context,
+        ("<p>", "</p>"),
+        false,
+    );
+
+    assert_eq!(out_text, contents);
 }
