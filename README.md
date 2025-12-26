@@ -31,7 +31,7 @@ You can do the following now:
 > ```md
 > # My title block
 > Lorem ipsum dolor sit amet, consetetur sadipscing elitr, 
-> sed diam nonumy eirmod tempor invidunt ut labore et dolore 
+> sed diam nonumy eirmod **tempor invidunt** ut labore et dolore 
 > magna aliquyam erat, sed diam voluptua. 
 > ```
 
@@ -73,7 +73,7 @@ and using the above example it will look like this:
 >         <h1>My title block</h1>
 >         <p>
 >           Lorem ipsum dolor sit amet, consetetur sadipscing elitr, 
->           sed diam nonumy eirmod tempor invidunt ut labore et dolore 
+>           sed diam nonumy eirmod <strong>tempor invidunt</strong> ut labore et dolore 
 >           magna aliquyam erat, sed diam voluptua.
 >         </p>
 >     </div>
