@@ -5,7 +5,7 @@
 
 A small Terminal Application that transforms a bunch of HTML Snippets into a static Website with nothing more than a bunch of Tags.
 The Workflow is employing a simplified bottom-up Model (similar from what you know as the atomic pattern), and implementing a method to build a static website with it without any JS.
-The tool is completely dependency free, and only uses rust's standard library features.
+The tool is completely dependency free, and only uses rust's standard library features. It supports ingesting pages and embeds from HTML, CommonMark/Markdown and raw Text.
 
 ## Getting started
 First, build this project using [rust cargo](https://rust-lang.org/tools/install/):
@@ -14,29 +14,43 @@ cargo build --release --bin static_atoms
 ```
 
 There are a few things to do to properly structure the project:
-* all your Pages reside in `<project_root>/pages`
-* all your sections reside in `<project_root>/sections`
-* your index file is found at `<project_root>/index.html`
+* all your Pages (.html, .md, .txt) reside in `<project_root>/pages`
+* all your sections (.html, .md, .txt) reside in `<project_root>/sections`
+* your index **html** file is found at `<project_root>/index.html`
 * all your media sits in `<project_root>/media`
 * additional files living at project_root are in `<project_root>/root`
-* ~~your stylesheet sits in `<project_root>/style.css`~~ your global stylesheet now lives in the root directory
+* ~~your stylesheet sits in `<project_root>/style.css`~~ your global stylesheet now lives in `<project_root>/root`
 
-If you now want to embed the atom *my_embed.html* into your page, you do the following:
-```html
-<!DOCTYPE html>
-<html lang="en">
-    <head>
-      ...
-      <link rel="stylesheet" href="/style.css">
-      ...
-  </head>
-  <body>
-    <div class="content_center">
-        <## my_embed>
-    </div>
-  </body>
-</html>
-```
+
+Now imagine the following scenario: 
+* You want to create a static page, in which the content changes, but you don't want to go into all the files all the time to adjust it (because it might be a big file, or that content is used multiple times). 
+* Or you want to keep your static page organized without any of the dependencies, that other libraries introduce.
+
+You can do the following now:
+> _<project_root>/sections/my_embed.md_
+> ```md
+> # My title block
+> Lorem ipsum dolor sit amet, consetetur sadipscing elitr, 
+> sed diam nonumy eirmod **tempor invidunt** ut labore et dolore 
+> magna aliquyam erat, sed diam voluptua. 
+> ```
+
+> _<project_root>/index.html_
+> ```html
+> <!DOCTYPE html>
+> <html lang="en">
+>     <head>
+>       ...
+>       <link rel="stylesheet" href="/style.css">
+>       ...
+>   </head>
+>   <body>
+>     <div class="content_center">
+>         <## my_embed>
+>     </div>
+>   </body>
+> </html>
+> ```
 
 afterwards you run the following in your project root:
 ```sh
@@ -44,27 +58,53 @@ static_atoms dist
 ```
 Now your static website is in the folder `<project_root>/dist`
 
+and using the above example it will look like this:
+> _<project_root>/dist/index.html_
+> ```html
+> <!DOCTYPE html>
+> <html lang="en">
+>     <head>
+>       ...
+>       <link rel="stylesheet" href="/style.css">
+>       ...
+>   </head>
+>   <body>
+>     <div class="content_center">
+>         <h1>My title block</h1>
+>         <p>
+>           Lorem ipsum dolor sit amet, consetetur sadipscing elitr, 
+>           sed diam nonumy eirmod <strong>tempor invidunt</strong> ut labore et dolore 
+>           magna aliquyam erat, sed diam voluptua.
+>         </p>
+>     </div>
+>   </body>
+> </html>
+> ```
+
+The resulting dist folder can be uploaded as-is onto a php, apache or nginx web server (or similar; it's really just html files, and extra media)
+
 ## Available Tags
 There are more tags available for you to use. Im going to list them here:
-| Tag | Description |
-|:--:|:---|
-| `<## embed_name>` | is a simple embed, that includes the HTML from `<project_root>/sections/embed_name.html` into wherever you try to embed it. |
-| `<## embed_name[]>` | this is a folder embed. It includes the entire folder with this name `<project_root>/embed_name/*` one after another, in alphabetic fashion |
-| `<## embed_name[..10]>` | the same as the folder embed, with the difference, that it only includes the first `10` entries of the selected folder, using the same sorting. |
-| `<## embed_name()>` | identical to a simple embed |
-| `<## embed_name(variable="value")>` | a parametric embed, that does the same as a simple embed, except that variables with the name `variable` defined within the embedded object are being replaced by `value`. At this time time it does not support embeds as part of the value |
-| `<## embed_name(var1="v1" var2="v2")>` | also a parametric embed, except with two variables, that are being replaced |
-| `<## embed_name(var1="v1()" var2="<## other_embed>")>` | _New:_ you can now use brackets and other embeds within the value of the parameters. They get correctly resolved aswell. |
-| `<## {variable}>` | a variable embed, that is being replaced with the value of `variable` passed into the current context by a parametric embed. If no variable has been found, it will be replaced by empty space |
+| Tag (HTML) | Tag (Markdown) | Description |
+|:--:|:--:|:---|
+| `<## embed_name>` | `[## embed_name]` | is a simple embed, that includes the HTML from `<project_root>/sections/embed_name.html` into wherever you try to embed it. |
+| `<## embed_name[]>` | `[## embed_name[]]` | this is a folder embed. It includes the entire folder with this name `<project_root>/embed_name/*` one after another, in alphabetic fashion |
+| `<## embed_name[..10]>` | `[## embed_name[..10]]` | the same as the folder embed, with the difference, that it only includes the first `10` entries of the selected folder, using the same sorting. |
+| `<## embed_name()>` | `[## embed_name()]` | identical to a simple embed |
+| `<## embed_name(variable="value")>` | `[## embed_name(variable="value")]` | a parametric embed, that does the same as a simple embed, except that variables with the name `variable` defined within the embedded object are being replaced by `value`. At this time time it does not support embeds as part of the value |
+| `<## embed_name(var1="v1" var2="v2")>` | `[## embed_name(var1="v1" var2="v2")]` | also a parametric embed, except with two variables, that are being replaced |
+| `<## embed_name(var1="v1()" var2="<## other_embed>")>` | `[## embed_name(var1="v1()" var2="<## other_embed>")]` | _New:_ you can now use brackets and other embeds within the value of the parameters. They get correctly resolved aswell. |
+| `<## embed_name(variable='value')>` | `[## embed_name(variable='value')]` | _New:_ the same as a parametric embed, but instead using single quotes (for recurively embedding parametric embeds into each other ) |
+| `<## {variable}>` | `[## {variable}]` | a variable embed, that is being replaced with the value of `variable` passed into the current context by a parametric embed. If no variable has been found, it will be replaced by empty space |
 
 ## Predefined variables
 There are a few variables, that are predefined, whenever a page is being parsed. They can always be used.
-| Variable | Description |
-|:--:|:---|
-| `<## {_VERSION}>` | Gets replaced by the version of this Tool, such as `2025.4.1` |
-| `<## {_APPNAME}>` | Gets replaced by the name of this Tool, such as `static_atoms_rs` |
-| `<## {_APPLINK}>` | Gets replaced by a href link to the github of this tool, such as `<a href="..">static_atoms_rs</a>`
-| `<## {_PAGES}>`| Gets replaced by an unordered list of href links to all available pages |
+| Variable (HTML) | Variable (Markdown) | Description |
+|:--:|:--:|:---|
+| `<## {_VERSION}>` | `[## {_VERSION}]` | Gets replaced by the version of this Tool, such as `2025.4.1` |
+| `<## {_APPNAME}>` | `[## {_APPNAME}]` | Gets replaced by the name of this Tool, such as `static_atoms_rs` |
+| `<## {_APPLINK}>` | `[## {_APPLINK}]` | Gets replaced by a href link to the github of this tool, such as `<a href="..">static_atoms_rs</a>`
+| `<## {_PAGES}>`| `[## {_PAGES}]`| Gets replaced by an unordered list of href links to all available pages in html format |
 
 ## Available CLI Arguments
 For a complete list run `static_atoms help`
@@ -73,3 +113,8 @@ For a complete list run `static_atoms help`
 |:--:|:---|
 |`static_atoms dist`| runs the main function and transforms all files in `<current_dir>/pages` into static pages within `<current_dir>/dist/pages` alongside all the necessary media and stylesheet.|
 | `static_atoms dist --out=<path>` | runs the transformation, but instead places the pages files into `<path>/pages` alongside with all the necessary media and stylesheet. |
+|`static_atoms dist --in=<relative_filepath>`| runs the main function and transforms either the files in the supplied directory or the actual file into static pages within `<current_dir>/dist/pages` alongside all the necessary media and stylesheet. |
+| `static_atoms dist --in=<pathA> --in=<pathB> --in=...` | does the same as above, but you can add multiple files/directories as input source |
+
+## Current Maintainers
+* [Robert Lang (BIOCHEMIST)](https://keyoxide.org/aspe%3Akeyoxide.org%3ALKNM7IFP5UH7XHC7F7HPBHE6RM)

@@ -1,4 +1,5 @@
 mod dist;
+mod filetype;
 #[cfg(test)]
 mod tests;
 
@@ -10,9 +11,12 @@ static DEFAULT_MAX_DEPTH: u8 = 8;
 
 pub struct Configuration {
     root: PathBuf,
+    input_files: Vec<PathBuf>,
     out: Option<PathBuf>,
     clean: bool,
+    hide_extension: bool,
     write: bool,
+    verbose: bool,
     max_depth: u8,
 }
 
@@ -33,6 +37,17 @@ impl std::fmt::Display for Configuration {
                 format!("  clean: `{}`", self.clean),
                 format!("  write: `{}`", self.write),
                 format!("  max_depth: `{}`", self.max_depth),
+                format!("  hide_extension: `{}`", self.hide_extension),
+                format!("  verbose: `{}`", self.verbose),
+                format!("  input_files: `{}`", {
+                    let mut array_string: String = "[".into();
+
+                    for path in &self.input_files {
+                        array_string = array_string + path.to_str().unwrap_or("") + ", ";
+                    }
+
+                    array_string + "]"
+                }),
             ]
             .join("\n")
         )
@@ -52,10 +67,13 @@ fn main() {
         .expect("The current directory either doesn't exist, or is inaccessible!");
     let mut config = Configuration {
         root: config_root.clone(),
+        input_files: Vec::default(),
         out: None,
         clean: false,
         write: true,
+        verbose: false,
         max_depth: DEFAULT_MAX_DEPTH,
+        hide_extension: false,
     };
     let mut action = Action::RunHelp;
 
@@ -77,6 +95,16 @@ fn main() {
                 continue;
             }
 
+            if param.eq_ignore_ascii_case("hide-extension") {
+                config.hide_extension = true;
+                continue;
+            }
+
+            if param.eq_ignore_ascii_case("verbose") {
+                config.verbose = true;
+                continue;
+            }
+
             if let Some(out_param) = param.strip_prefix("out=") {
                 let path: PathBuf = PathBuf::from(out_param);
                 config.out = Some(path);
@@ -86,6 +114,12 @@ fn main() {
             if let Some(root_param) = param.strip_prefix("root=") {
                 let path: PathBuf = PathBuf::from(root_param);
                 config.root = path;
+                continue;
+            }
+
+            if let Some(input_param) = param.strip_prefix("in=") {
+                let path: PathBuf = PathBuf::from(input_param);
+                config.input_files.push(path);
                 continue;
             }
 
@@ -110,6 +144,16 @@ fn main() {
 
                     'd' => {
                         config.write = false;
+                        continue;
+                    }
+
+                    'h' => {
+                        config.hide_extension = true;
+                        continue;
+                    }
+
+                    'v' => {
+                        config.verbose = true;
                         continue;
                     }
 
@@ -168,21 +212,28 @@ fn show_help() {
         Transforms a templated website into a static website, that can be hosted\n\
         by any webserver. Runs this help, if no action has been specified.\n\n\
         Available actions are:\n\
-        \tdist\t\tbuilds the dist in the specified roots /dist directory\n\
-        \tconfig\t\tdumps the config into stdout\n\
-        \thelp\t\tshows this help\n\n\
+        \tdist\t\t\tbuilds the dist in the specified roots /dist directory\n\
+        \tconfig\t\t\tdumps the config into stdout\n\
+        \thelp\t\t\tshows this help\n\n\
         Additional Parameters are:\n\
-        \t--out=<path>\toverrides the default output directory; default\n\
-        \t\t\tis <root_dir>/dist\n\
-        \t--root=<path>\toverrides the project root; the default is\n\
-        \t\t\tthe current folder the command is executed in\n\
-        \t--clean\t\tdeletes the contents of the output folder before building\n\
-        \t\t\tthe new static website\n\
-        \t--dry\t\tdo not write any files, to validate if the process runs\n\
-        \t\t\tsuccessfully without errors\n\
-        \t--depth\t\tsets the maximum recursion depth. Default is {DEFAULT_MAX_DEPTH}\n\
-        \t-c\t\tsame as --clean\n\
-        \t-d\t\tsame as --dry\n\
+        \t--out=<path>\t\toverrides the default output directory; default\n\
+        \t\t\t\tis <root_dir>/dist\n\
+        \t--in=<path>\t\tselects a path or file to be the input relative to root.\n\
+        \t\t\t\tCan be called multiple times; if --in is not set, defaults to \n\
+        \t\t\t\t<root_dir>/pages and <root_dir>/index.html\n\
+        \t--root=<path>\t\toverrides the project root; the default is the\n\
+        \t\t\t\tcurrent folder the command is executed in\n\
+        \t--clean\t\t\tdeletes the contents of the output folder before building\n\
+        \t\t\t\tthe new static website\n\
+        \t--dry\t\t\tdo not write any files, to validate if the process runs\n\
+        \t\t\t\tsuccessfully without errors\n\
+        \t--verbose\t\toutput extra stuff, for fixing issues\n\
+        \t--depth\t\t\tsets the maximum recursion depth. Default is {DEFAULT_MAX_DEPTH}\n\
+        \t--hide-extension\twhen writing the files into output directory, do not use\n\
+        \t\t\t\tfile extensions, except for the index files.\n\
+        \t-c\t\t\tsame as --clean\n\
+        \t-d\t\t\tsame as --dry\n\
+        \t-h\t\t\tsame as --hide-extension\n\
     "
     )
 }
