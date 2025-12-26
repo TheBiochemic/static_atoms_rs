@@ -1,15 +1,14 @@
 use std::{
     collections::HashMap,
     ffi::OsStr,
-    fs::{self, FileType},
-    io,
-    path::{Component, Path, PathBuf},
+    fs, io,
+    path::{Path, PathBuf},
     usize,
 };
 
 pub mod markdown;
 
-use crate::{Configuration, dist::markdown::resolve_tokens_markdown};
+use crate::{Configuration, filetype::FileType};
 
 fn get_dist_path(config: &Configuration) -> PathBuf {
     match &config.out {
@@ -119,16 +118,9 @@ pub fn run_dist(config: &Configuration) {
 
     // Go through the pages directory
     for page in pages {
-        let extension = page.extension().unwrap_or_default().to_string_lossy();
-        match extension.as_ref() {
-            "html" => {
-                process_page(config, page, &default_context);
-            }
-            "md" => {
-                process_page_markdown(config, page, &default_context);
-            }
-            _ => (),
-        };
+        if FileType::has_valid_extension(&page) {
+            process_page(config, page, &default_context);
+        }
     }
 
     process_page(
@@ -204,14 +196,6 @@ pub fn build_default_context(
         ),
         ("_PAGES".to_string(), pages),
     ])
-}
-
-pub fn read_section(path: &PathBuf) -> String {
-    let file_error = format!(
-        "Wasn't able to read the file contents of `{}`",
-        path.to_string_lossy()
-    );
-    fs::read_to_string(path).expect(&file_error)
 }
 
 pub fn resolve_tokens_from_path(
@@ -370,28 +354,6 @@ pub fn write_contents(config: &Configuration, page: PathBuf, contents: String) {
     }
 }
 
-pub fn process_page_markdown(
-    config: &Configuration,
-    page: PathBuf,
-    default_context: &HashMap<String, String>,
-) {
-    let relative_path = page
-        .strip_prefix(config.root.clone())
-        .unwrap_or(page.as_path());
-    let path_string = relative_path.to_string_lossy();
-    println!("Transforming {} ...", page.to_str().unwrap_or_default());
-    let contents = resolve_tokens_markdown(
-        path_string.into(),
-        config,
-        &read_section(&page),
-        0,
-        default_context,
-        ("<p>", "</p>"),
-        false,
-    );
-    write_contents(config, page, contents)
-}
-
 pub fn process_page(
     config: &Configuration,
     page: PathBuf,
@@ -402,13 +364,13 @@ pub fn process_page(
         .unwrap_or(page.as_path());
     let path_string = relative_path.to_string_lossy();
     println!("Transforming {path_string} ...");
-    let contents = resolve_tokens_html(
-        path_string.into(),
-        config,
-        &read_section(&page),
-        0,
-        default_context,
-    );
+    let contents = resolve_tokens_from_path(path_string.into(), &page, config, 0, default_context)
+        .unwrap_or_else(|| {
+            panic!(
+                "Wasn't able to build page, since no page content could be generated for {}",
+                page.to_string_lossy()
+            );
+        });
     write_contents(config, page, contents)
 }
 
@@ -653,9 +615,8 @@ pub fn parse_folder_embed(
             let mut collected_dirs: Vec<_> = dirs
                 .filter_map(|dir| match dir {
                     Ok(found_dir) => {
-                        if found_dir.path().is_file()
-                            && found_dir.path().extension().and_then(OsStr::to_str) == Some("html")
-                        {
+                        let dir_path = found_dir.path();
+                        if dir_path.is_file() && FileType::has_valid_extension(&dir_path) {
                             Some(found_dir)
                         } else {
                             None
@@ -707,11 +668,6 @@ pub fn parse_single_embed(
     context: &HashMap<String, String>,
 ) -> String {
     let component_path = config.root.clone().join("sections").join(component);
-    let relative_path = component_path
-        .as_path()
-        .strip_prefix(config.root.clone())
-        .unwrap_or(component_path.as_path());
-    let path_string = relative_path.to_string_lossy();
 
     if let Some(converted_content) = resolve_tokens_from_path(
         path.clone(),

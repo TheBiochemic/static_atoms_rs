@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Sub};
+use std::collections::HashMap;
 
 use crate::{
     Configuration,
@@ -57,7 +57,7 @@ pub fn resolve_tokens_markdown(
         match block {
             TopLevelBlock::Nothing => (),
             TopLevelBlock::Paragraph(content) => {
-                let paragraph = resolve_markdown_paragraph(&config, content, depth, context);
+                let paragraph = resolve_markdown_paragraph(content);
                 converted.push_str(&paragraph);
                 converted.push_str(custom_tag_type.1)
             }
@@ -363,7 +363,7 @@ pub fn resolve_tokens_markdown(
 
         // If the line starts with a fence code block
         if line_no_prefix.starts_with("```") {
-            if let TopLevelBlock::CodeBlockFence(indent, _) = top_level_block {
+            if let TopLevelBlock::CodeBlockFence(_, _) = top_level_block {
                 if trimmed_line == "```" {
                     finish_blocks(
                         path.clone(),
@@ -484,12 +484,8 @@ pub fn resolve_tokens_markdown(
                     &mut top_level_block,
                     &custom_tag_type,
                 );
-                let paragraph = resolve_markdown_paragraph(
-                    &config,
-                    trimmed_line[(header_type + 1)..].trim(),
-                    depth,
-                    context,
-                );
+                let paragraph =
+                    resolve_markdown_paragraph(trimmed_line[(header_type + 1)..].trim());
                 converted
                     .push_str(format!("<h{header_type}>{paragraph}</h{header_type}>").as_str());
                 prev_line_was_empty = false;
@@ -534,9 +530,9 @@ pub fn resolve_tokens_markdown(
             prev_line_was_empty = false;
         } else {
             if let TopLevelBlock::List {
-                indent,
-                list_type,
-                use_paragraph,
+                indent: _,
+                list_type: _,
+                use_paragraph: _,
                 list_items,
             } = &mut top_level_block
             {
@@ -574,12 +570,7 @@ pub fn resolve_tokens_markdown(
     converted
 }
 
-fn resolve_markdown_paragraph(
-    config: &&Configuration,
-    paragraph: &str,
-    depth: u8,
-    context: &HashMap<String, String>,
-) -> String {
+fn resolve_markdown_paragraph(paragraph: &str) -> String {
     // Relevant data
     let mut output_text = String::from(paragraph);
 

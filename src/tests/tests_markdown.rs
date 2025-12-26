@@ -181,10 +181,10 @@ fn test_mixed_multi_md_html() {
 }
 
 #[test]
-fn test_multi_files_md() {
+fn test_multi_files_md_txt() {
     let config = get_config();
-    let in_text = "this is some text, that has [## embeds_md/included_files] and\n uses [## embeds_md/markdown_files()] for layouting and styling. You can even use variables: \n# [## {CUSTOM_VAR}]";
-    let out_text = "<p>this is some text, that has <p><em>a few included files</em></p> \
+    let in_text = "this is some text, that has [## embeds_md/included_files_txt] and\n uses [## embeds_md/markdown_files()] for layouting and styling. You can even use variables: \n# [## {CUSTOM_VAR}]";
+    let out_text = "<p>this is some text, that has a few included files \
                             and uses <p><strong>markdown files</strong></p> for layouting and styling. You can even use variables:</p><h1><em>Like this one</em></h1>".to_owned();
     let custom_context = {
         let mut context: HashMap<String, String> = HashMap::new();
@@ -193,11 +193,11 @@ fn test_multi_files_md() {
     };
 
     create_test_section(
-        FileType::FileMarkdown,
+        FileType::FileText,
         &config,
         vec!["embeds_md"],
-        "included_files",
-        "_a few included files_",
+        "included_files_txt",
+        "a few included files",
     );
 
     create_test_section(

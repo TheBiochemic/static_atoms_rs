@@ -5,7 +5,7 @@
 
 A small Terminal Application that transforms a bunch of HTML Snippets into a static Website with nothing more than a bunch of Tags.
 The Workflow is employing a simplified bottom-up Model (similar from what you know as the atomic pattern), and implementing a method to build a static website with it without any JS.
-The tool is completely dependency free, and only uses rust's standard library features.
+The tool is completely dependency free, and only uses rust's standard library features. It supports ingesting pages and embeds from HTML, CommonMark/Markdown and raw Text.
 
 ## Getting started
 First, build this project using [rust cargo](https://rust-lang.org/tools/install/):
@@ -14,35 +14,74 @@ cargo build --release --bin static_atoms
 ```
 
 There are a few things to do to properly structure the project:
-* all your Pages (.html or .md) reside in `<project_root>/pages`
-* all your sections (.html or .md) reside in `<project_root>/sections`
+* all your Pages (.html, .md, .txt) reside in `<project_root>/pages`
+* all your sections (.html, .md, .txt) reside in `<project_root>/sections`
 * your index **html** file is found at `<project_root>/index.html`
 * all your media sits in `<project_root>/media`
 * additional files living at project_root are in `<project_root>/root`
 * ~~your stylesheet sits in `<project_root>/style.css`~~ your global stylesheet now lives in `<project_root>/root`
 
-If you now want to embed the section *my_embed.html* (or converted *my_embed.md*) into your page, you do the following:
-```html
-<!DOCTYPE html>
-<html lang="en">
-    <head>
-      ...
-      <link rel="stylesheet" href="/style.css">
-      ...
-  </head>
-  <body>
-    <div class="content_center">
-        <## my_embed>
-    </div>
-  </body>
-</html>
-```
+
+Now imagine the following scenario: 
+* You want to create a static page, in which the content changes, but you don't want to go into all the files all the time to adjust it (because it might be a big file, or that content is used multiple times). 
+* Or you want to keep your static page organized without any of the dependencies, that other libraries introduce.
+
+You can do the following now:
+> _<project_root>/sections/my_embed.md_
+> ```md
+> # My title block
+> Lorem ipsum dolor sit amet, consetetur sadipscing elitr, 
+> sed diam nonumy eirmod tempor invidunt ut labore et dolore 
+> magna aliquyam erat, sed diam voluptua. 
+> ```
+
+> _<project_root>/index.html_
+> ```html
+> <!DOCTYPE html>
+> <html lang="en">
+>     <head>
+>       ...
+>       <link rel="stylesheet" href="/style.css">
+>       ...
+>   </head>
+>   <body>
+>     <div class="content_center">
+>         <## my_embed>
+>     </div>
+>   </body>
+> </html>
+> ```
 
 afterwards you run the following in your project root:
 ```sh
 static_atoms dist
 ```
 Now your static website is in the folder `<project_root>/dist`
+
+and using the above example it will look like this:
+> _<project_root>/dist/index.html_
+> ```html
+> <!DOCTYPE html>
+> <html lang="en">
+>     <head>
+>       ...
+>       <link rel="stylesheet" href="/style.css">
+>       ...
+>   </head>
+>   <body>
+>     <div class="content_center">
+>         <h1>My title block</h1>
+>         <p>
+>           Lorem ipsum dolor sit amet, consetetur sadipscing elitr, 
+>           sed diam nonumy eirmod tempor invidunt ut labore et dolore 
+>           magna aliquyam erat, sed diam voluptua.
+>         </p>
+>     </div>
+>   </body>
+> </html>
+> ```
+
+The resulting dist folder can be uploaded as-is onto a php, apache or nginx web server (or similar; it's really just html files, and extra media)
 
 ## Available Tags
 There are more tags available for you to use. Im going to list them here:

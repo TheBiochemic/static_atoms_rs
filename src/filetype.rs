@@ -1,11 +1,15 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, ffi::OsStr, path::PathBuf};
 
 use crate::{
     Configuration,
     dist::{markdown::resolve_tokens_markdown, resolve_tokens_html},
 };
 
-pub static FILE_TYPES: [FileType; 2] = [FileType::FileHTML, FileType::FileMarkdown];
+static FILE_TYPES: [FileType; 3] = [
+    FileType::FileHTML,
+    FileType::FileMarkdown,
+    FileType::FileText,
+];
 
 /**
  * All the filetype related stuff goes here. I felt, that the
@@ -16,6 +20,7 @@ pub enum FileType {
     Directory,
     FileHTML,
     FileMarkdown,
+    FileText,
 }
 
 impl FileType {
@@ -24,13 +29,28 @@ impl FileType {
             FileType::Directory => panic!("You should never call this function for a directory!"),
             FileType::FileHTML => "html",
             FileType::FileMarkdown => "md",
+            FileType::FileText => "txt",
         }
     }
 
     pub fn is_file(&self) -> bool {
         match self {
             FileType::Directory => false,
-            FileType::FileHTML | FileType::FileMarkdown => true,
+            _ => true,
+        }
+    }
+
+    pub fn has_valid_extension(path: &PathBuf) -> bool {
+        match path.extension().and_then(OsStr::to_str) {
+            Some(file_ext) => {
+                for filetype in &FILE_TYPES {
+                    if filetype.extension() == file_ext {
+                        return true;
+                    }
+                }
+                false
+            }
+            None => false,
         }
     }
 
@@ -60,6 +80,7 @@ impl FileType {
                 ("<p>", "</p>"),
                 false,
             ),
+            FileType::FileText => content.to_string(),
         }
     }
 }
