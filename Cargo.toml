@@ -24,8 +24,18 @@ name = "static_atoms"
 path = "src/main.rs"
 
 [package.metadata.packager]
+name = "static_atoms_rs"
+product-name = "static_atoms_rs"
+authors = ['Robert Lang <https://mastodon.social/@biochemic>']
+version = "2025.4.4"
 before-packaging-command = "cargo build --release"
 copyright = "GPL 3.0 only"
+identifier = "de.biochemist.static-atoms-rs"
+category = "DeveloperTool"
+description = "a terminal program to transform a web template into a static website using nothing more than a few extra tags"
+homepage = "https://55bytes.de/pages/all_projects"
+long-description = "A small Terminal Application that transforms a bunch of HTML Snippets into a static Website with nothing more than a bunch of Tags. The Workflow is employing a simplified bottom-up Model (similar from what you know as the atomic pattern), and implementing a method to build a static website with it without any JS. The tool is completely dependency free, and only uses rust's standard library features. It supports ingesting pages and embeds from HTML, CommonMark/Markdown and raw Text."
+icons = ["./icon.png"]
 
 [profile.release]
 codegen-units = 1
